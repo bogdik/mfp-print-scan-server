@@ -347,16 +347,7 @@ class WindowsPrintBackend(PrintBackend):
             pdf.close()
 
     def _image_pages(self, file_path: Path):
-        from PIL import Image, ImageWin
-
-        img = open_image(file_path)
-
-        def draw(hdc, p):
-            # ROTATE_270 is 90° clockwise — same direction as PDFium's rotate=1.
-            im = img.transpose(Image.Transpose.ROTATE_270) if p.rotate else img
-            ImageWin.Dib(im).draw(hdc, (round(p.x), round(p.y), round(p.x + p.w), round(p.y + p.h)))
-
-        yield *image_size_pt(img), draw
+        yield from self._pil_pages(open_image(file_path))
 
     def _raster_pages(self, file_path: Path):
         from PIL import Image, ImageWin
@@ -390,11 +381,14 @@ class WindowsPrintBackend(PrintBackend):
         if action_id == TEST_PAGE.id:
             self._print_test_page(printer_name)
         else:
-            self._send_raw(printer_name, canon_command(action_id), f"MFP: {action_id}")
+            # A RAW spooler job, just like the Canon driver's own maintenance jobs.
+            self._send_raw(printer_name, canon_command(action_id), t(f"mnt.{action_id}"))
 
     @staticmethod
     def _print_test_page(printer_name: str) -> None:
-        """Windows' own test page (same as the button in printer properties)."""
+        """Windows' own test page (the button in printer properties), via WMI
+        Win32_Printer.PrintTestPage. Windows only allows it for an
+        administrator: it returns 5 ("access denied") otherwise."""
         import pythoncom
         import win32com.client
 
@@ -405,7 +399,11 @@ class WindowsPrintBackend(PrintBackend):
             printers = list(wmi.ExecQuery(f"SELECT * FROM Win32_Printer WHERE Name = '{wql_name}'"))
             if not printers:
                 raise PrintError(t("err.printer_not_found", printer=printer_name))
-            result = printers[0].PrintTestPage()
+            # ExecMethod_ rather than printers[0].PrintTestPage(): with late-bound
+            # COM the attribute access alone already calls the method.
+            result = printers[0].ExecMethod_("PrintTestPage").Properties_("ReturnValue").Value
+            if result == 5:
+                raise PrintError(t("err.test_page_admin"))
             if result != 0:
                 raise PrintError(t("err.test_page_code", code=result))
         except PrintError:
@@ -414,6 +412,18 @@ class WindowsPrintBackend(PrintBackend):
             raise PrintError(t("err.test_page", error=exc)) from exc
         finally:
             pythoncom.CoUninitialize()
+
+    @staticmethod
+    def _pil_pages(img):
+        """open_pages() for a PIL image: one page drawn into the device rect."""
+        from PIL import Image, ImageWin
+
+        def draw(hdc, p):
+            # ROTATE_270 is 90° clockwise — same direction as PDFium's rotate=1.
+            im = img.transpose(Image.Transpose.ROTATE_270) if p.rotate else img
+            ImageWin.Dib(im).draw(hdc, (round(p.x), round(p.y), round(p.x + p.w), round(p.y + p.h)))
+
+        yield *image_size_pt(img), draw
 
     def _send_raw(self, printer_name: str, data: bytes, job_name: str) -> None:
         """Sends bytes to the printer untouched by the driver (RAW job)."""

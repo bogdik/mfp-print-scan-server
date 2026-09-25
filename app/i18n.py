@@ -255,6 +255,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "ru": "Windows не смогла напечатать пробную страницу (код {code})",
         "en": "Windows couldn't print the test page (code {code})",
     },
+    "err.test_page_admin": {
+        "ru": "Windows печатает пробную страницу только для администратора — запустите сервер от имени администратора",
+        "en": "Windows prints its test page only for an administrator — run the server as administrator",
+    },
     "err.test_page": {"ru": "Ошибка пробной страницы: {error}", "en": "Test page failed: {error}"},
     "err.send_command": {"ru": "Не удалось отправить команду принтеру: {error}", "en": "Couldn't send the command to the printer: {error}"},
     "err.cups_missing": {

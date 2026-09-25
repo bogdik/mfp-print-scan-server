@@ -85,7 +85,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 
 ### Maintenance
 - **Test page**: the operating system's standard test page, for any printer.
-- **Nozzle check** and **head cleaning** for Canon inkjets: the same BJL control commands the [gutenprint](https://gimp-print.sourceforge.io/) `commandtocanon` filter sends.
+- **Nozzle check** and **head cleaning** for Canon inkjets: byte-for-byte the maintenance job the Canon driver itself sends (IVEC mode switch + BJL commands), captured from the Windows driver's print queue.
 
 ### Other
 - Optional **sign-in** (`auth = yes` in `config.ini`): users and passwords (hashed or plain) in the config, remembered sessions, brute-force lockout, HTTP Basic for scripts, optional Basic auth for IPP.
@@ -107,8 +107,9 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 | Linux server (CUPS printing) | ✅ printing was tested at the start of the project |
 | Linux server — SANE scanning (preview, area select, color/gray/lineart, JPEG/PNG/TIFF/PDF, merge to PDF) | ✅ tested end-to-end against a real Canon PIXMA MG2500 over `scanimage` |
 | Linux server — print preview (PDF/image rendering, margins) | ✅ tested; exact hardware margins aren't available on Linux (falls back to A4 + 5 mm) |
-| Linux server — maintenance (test page / nozzle check / head cleaning) | ⚠️ written against documented tool output, not yet run on real hardware |
-| Canon nozzle check / head cleaning commands | ⚠️ implemented, not yet confirmed on paper |
+| Linux server — maintenance: Canon nozzle check and head cleaning (raw job via CUPS) | ✅ confirmed on the MG2500 — printed the nozzle pattern, audibly ran head cleaning |
+| Linux server — maintenance: OS test page | ⚠️ written against documented tool output, not yet run on real hardware |
+| Maintenance on Windows: test page (server run as administrator), Canon nozzle check and head cleaning | ✅ confirmed on the MG2541 |
 | Windows autostart task (`register_service.bat`) | ⚠️ background run with a log file tested; registering the task itself needs admin rights and hasn't been confirmed yet |
 | Linux systemd unit | ⚠️ example, not yet run on a real system |
 
@@ -286,7 +287,7 @@ Below the print button there's a **Maintenance** row for the selected printer:
 
 | Action | Printers | What it does |
 |---|---|---|
-| Test page | any | the OS's standard test page (`Win32_Printer.PrintTestPage` / CUPS `testprint`) |
+| Test page | any | the OS's standard test page (`Win32_Printer.PrintTestPage` / CUPS `testprint`). On Windows it only works when the server runs **as administrator**: Windows refuses it otherwise |
 | Nozzle check | Canon inkjets | prints the nozzle check pattern — gaps mean the head needs cleaning |
 | Head cleaning | Canon inkjets | cleans the print head (uses ink, ~1 minute) |
 
@@ -431,7 +432,7 @@ app/
     linux_cups.py      Linux backend (lp, lpoptions, LibreOffice conversion)
     layout.py          page placement shared by printing and preview
     media_constraints.py  paper type ↔ size rules per printer model
-    maintenance.py     test page / nozzle check / head cleaning (Canon BJL)
+    maintenance.py     test page / nozzle check / head cleaning (Canon IVEC + BJL job)
     pwg.py             PWG Raster decoder
   ipp/
     protocol.py        IPP binary encoding
@@ -573,7 +574,7 @@ Without Microsoft Word, Windows prints `.docx` with WordPad, which loses formatt
 
 **Paper type ↔ size rules for a new model.** Add an entry to `RULES` in `app/printing/media_constraints.py`, keyed by driver name. Use the DEVMODE media/paper ids; you can list them with `DeviceCapabilities` (`DC_MEDIATYPES`, `DC_PAPERS`).
 
-**Maintenance commands for other brands.** `app/printing/maintenance.py` holds the Canon BJL commands. Add a matcher and a command table in the same style.
+**Maintenance commands for other brands.** `app/printing/maintenance.py` holds the Canon maintenance job. Add a matcher and a command builder in the same style. To find out what a vendor driver sends, pause the job it creates for its own maintenance function and read it with `ReadPrinter`. That's how the Canon format was captured.
 
 **Translations.** All texts are in `app/i18n.py`:
 - keys `web.*` are used by the page and its JavaScript;
@@ -605,7 +606,7 @@ Stack:
 - **No OCR** for scans.
 - **Office formats on Windows** are printed through whatever program is registered for them; without Word, `.docx` loses formatting.
 - **Duplex**: the MG2500 driver reports duplex, but the printer has no automatic duplexer, so the driver does manual duplex.
-- The **Linux server** side of maintenance (test page / nozzle check / head cleaning) hasn't been run on real hardware yet; scanning (SANE) has and works.
+- The **Linux server**'s OS test page (maintenance) hasn't been run on real hardware yet; Canon nozzle check/head cleaning and scanning (SANE) have and work.
 
 ## License
 
@@ -614,6 +615,6 @@ Stack:
 ## Credits
 
 - [phpSane](https://github.com/gawindx/phpSane): inspiration for the scanning UI.
-- [gutenprint](https://gimp-print.sourceforge.io/) `commandtocanon`: Canon BJL maintenance commands.
+- [gutenprint](https://gimp-print.sourceforge.io/) `commandtocanon` and Canon's cnijfilter sources: the BJL command vocabulary. The exact job layout comes from the Canon Windows driver's own maintenance jobs.
 - [PDFium](https://pdfium.googlesource.com/pdfium/) via [pypdfium2](https://github.com/pypdfium2-team/pypdfium2), [Pillow](https://python-pillow.org/), [FastAPI](https://fastapi.tiangolo.com/), [pywin32](https://github.com/mhammond/pywin32).
 - PWG specifications: IPP Everywhere (PWG 5100.14), PWG Raster (PWG 5102.4), media names (PWG 5101.1).
