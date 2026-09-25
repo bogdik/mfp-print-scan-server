@@ -6,6 +6,7 @@ from pathlib import Path
 from .base import MediaInfo, OptionChoice, PrintBackend, PrinterInfo, PrinterOption, PrintError
 from ..i18n import t
 from . import media_constraints
+from .convert import to_pdf
 from .maintenance import TEST_PAGE, MaintenanceAction, actions_for, raw_command
 from .layout import IMAGE_EXTENSIONS, PDFIUM_LOCK, PageLayout, Placement, fit_page, image_size_pt, open_image
 
@@ -180,9 +181,13 @@ class WindowsPrintBackend(PrintBackend):
         options, note = self._fix_media(target, dict(options or {}))
 
         suffix = file_path.suffix.lower()
-        if suffix == ".pdf":
+        # Office documents / text: LibreOffice → PDF when it's installed, so
+        # they print exactly like the preview shows. The job keeps the
+        # original file name.
+        pdf = file_path if suffix == ".pdf" else to_pdf(file_path)
+        if pdf is not None:
             with PDFIUM_LOCK:
-                self._print_direct(file_path, target, copies, options, lambda: self._pdf_pages(file_path), scaling)
+                self._print_direct(file_path, target, copies, options, lambda: self._pdf_pages(pdf), scaling)
             return note
         if suffix in IMAGE_EXTENSIONS:
             self._print_direct(file_path, target, copies, options, lambda: self._image_pages(file_path), scaling)

@@ -1,17 +1,13 @@
 import re
-import shutil
 import subprocess
 from pathlib import Path
 
 from ..i18n import t
 from .base import OptionChoice, PrintBackend, PrinterInfo, PrinterOption, PrintError
+from .convert import to_pdf
 from .maintenance import TEST_PAGE, MaintenanceAction, actions_for, raw_command
 
 CUPS_TEST_PAGE = Path("/usr/share/cups/data/testprint")
-
-# Office formats CUPS can't render directly — converted to PDF via LibreOffice
-# first, if it's installed.
-CONVERTIBLE_EXTENSIONS = {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".rtf"}
 
 # PPD options that duplicate another option or aren't meaningful per-job —
 # hidden from the UI. Everything else the driver reports (PageSize,
@@ -108,7 +104,10 @@ class CupsPrintBackend(PrintBackend):
         options: dict[str, str] | None = None,
         scaling: str = "fit",  # CUPS applies its own scaling; IPP isn't served on Linux
     ) -> None:
-        path_to_print = self._maybe_convert(file_path)
+        # Office documents / text go through LibreOffice → PDF when it's
+        # installed, so the printout matches the preview; otherwise CUPS gets
+        # the original file.
+        path_to_print = to_pdf(file_path) or file_path
         cmd = ["lp"]
         if printer_name:
             cmd += ["-d", printer_name]
@@ -153,20 +152,3 @@ class CupsPrintBackend(PrintBackend):
             raise PrintError(t("err.cups_missing", cmd="lp")) from exc
         if result.returncode != 0:
             raise PrintError(result.stderr.decode(errors="replace").strip() or t("err.cmd_failed", cmd="lp"))
-
-    def _maybe_convert(self, file_path: Path) -> Path:
-        if file_path.suffix.lower() not in CONVERTIBLE_EXTENSIONS:
-            return file_path
-
-        soffice = shutil.which("soffice") or shutil.which("libreoffice")
-        if not soffice:
-            return file_path
-
-        outdir = file_path.parent
-        subprocess.run(
-            [soffice, "--headless", "--convert-to", "pdf", "--outdir", str(outdir), str(file_path)],
-            capture_output=True,
-            timeout=60,
-        )
-        converted = outdir / (file_path.stem + ".pdf")
-        return converted if converted.exists() else file_path

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .i18n import t
+from .printing.convert import to_pdf
 from .printing.layout import IMAGE_EXTENSIONS, PDFIUM_LOCK, PageLayout, Placement, fit_page, open_image
 
 PREVIEW_WIDTH_PX = 500  # sheet width in the preview image
@@ -15,8 +16,9 @@ MARGIN_COLOR = (230, 230, 230)  # unprintable border, so margins are visible
 
 
 class PreviewUnavailable(Exception):
-    """File type whose layout is decided by an external app (Notepad, Word,
-    ...), so the server can't know what the printout will look like."""
+    """File type the server can't lay out itself: office documents / text
+    without LibreOffice installed are printed by an external program, so
+    the printout isn't known in advance."""
 
 
 @dataclass
@@ -31,6 +33,10 @@ def render_preview(file_path: Path, layout: PageLayout, mono: bool) -> Preview:
         return _render_pdf(file_path, layout, mono)
     if suffix in IMAGE_EXTENSIONS:
         return Preview(pages=[_render_image(file_path, layout, mono)], total_pages=1)
+    # Same LibreOffice conversion (and cache) printing uses.
+    pdf = to_pdf(file_path)
+    if pdf is not None:
+        return _render_pdf(pdf, layout, mono)
     raise PreviewUnavailable(file_path.suffix)
 
 

@@ -65,7 +65,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 - Upload a file (drag & drop), choose printer, copies and **options read from the printer driver**: paper size, paper type, quality, color, duplex. Nothing is hard-coded, so another printer shows its own options.
 - **PDF and images are rendered by the server itself** (PDFium / Pillow) straight into the printer. Printing therefore doesn't depend on which programs are installed, and settings apply to that one job only, not to the printer's defaults.
 - **Accurate preview** for PDFs and images: the real sheet size and the printer's hardware margins, pages fitted exactly the way they'll print, landscape pages auto-rotated, grayscale for B&W. Preview and printing share the same layout code.
-- Other formats (`.txt`, `.docx`, …) are handed to the program registered to print them (Notepad, Word/WordPad, …).
+- **Documents and text** (`.txt`, `.rtf`, `.docx`, `.odt`, `.xlsx`, `.pptx`, …): with [LibreOffice](https://www.libreoffice.org/) installed on the server they're converted to PDF and then printed and previewed exactly like a PDF, on Windows and Linux. Non-UTF-8 text files (e.g. Windows-1251) are re-encoded first, so Cyrillic isn't garbled. Without LibreOffice they're handed to the program registered to print them (Notepad, Word/WordPad, …) and there's no preview.
 - **Paper type ↔ size rules**: some printers reject certain combinations, e.g. glossy photo paper in 13×18 on a Canon (error 4102). The server swaps in a compatible paper type and records a note on the job. The UI does the same as you pick options.
 - **Job history**: status, settings and notes. Stored in a JSON file, so it survives restarts. Delete single entries or clear it all; uploaded files are removed with their entries.
 
@@ -109,6 +109,8 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 | Linux server — print preview (PDF/image rendering, margins) | ✅ tested; exact hardware margins aren't available on Linux (falls back to A4 + 5 mm) |
 | Linux server — maintenance: OS test page, Canon nozzle check and head cleaning (via CUPS/`lp`) | ✅ confirmed on the MG2500 — printed both the CUPS test page and the nozzle pattern, audibly ran head cleaning |
 | Maintenance on Windows: test page (server run as administrator), Canon nozzle check and head cleaning | ✅ confirmed on the MG2541 |
+| Documents via LibreOffice 26.8 on Windows (TXT UTF-8 / Windows-1251, RTF, DOCX, XLSX) | ✅ conversion, preview and printing tested (printed to Microsoft Print to PDF) |
+| Documents via LibreOffice 24.2 on Linux (TXT UTF-8 / Windows-1251, DOCX, RTF) | ✅ conversion, preview (correct Cyrillic) and conversion caching tested; the converted PDF reaches CUPS correctly — physical output on paper wasn't confirmed this run (printer was disconnected) |
 | Windows autostart task (`register_service.bat`) | ✅ confirmed across a full computer restart: the Task Scheduler task registers, and the server comes up on its own before anyone logs on |
 | Linux systemd unit | ✅ confirmed: installed under a dedicated `mfp` system user (enabled for boot), serving real requests and reaching the USB scanner via the `scanner` group |
 
@@ -121,7 +123,8 @@ Reports for other printers and scanners are very welcome, see [Extending](#exten
 Requirements:
 - Windows 10 or 11;
 - [Python 3.11+ from python.org](https://www.python.org/downloads/windows/): tick **"Add python.exe to PATH"** during installation;
-- the printer installed with its normal driver, so that printing from e.g. Notepad already works.
+- the printer installed with its normal driver, so that printing from e.g. Notepad already works;
+- optional: [LibreOffice](https://www.libreoffice.org/download/), to print and preview documents and text files exactly. It's found automatically in its standard install folder; restart the server after installing it.
 
 Steps:
 1. Download or clone this repository.
@@ -245,7 +248,8 @@ sudo systemctl disable --now mfp-print-scan-server && sudo rm /etc/systemd/syste
 |---|---|---|
 | PDF | rendered by the server (PDFium) | ✅ exact |
 | JPEG, PNG, BMP, GIF, TIFF, WebP | rendered by the server (Pillow) | ✅ exact |
-| TXT, DOCX, RTF, … | by the program registered to print the file type (Windows), or via LibreOffice → PDF (Linux) | — |
+| TXT, RTF, DOC/DOCX, ODT, XLS/XLSX, ODS, CSV, PPT/PPTX, ODP | **with LibreOffice installed:** converted to PDF, then like a PDF (Windows and Linux) | ✅ exact, with LibreOffice |
+| the same, **without LibreOffice** | Windows: the program registered to print the file type; Linux: CUPS with the original file | — |
 
 ### Adding it as a network printer (IPP)
 
@@ -428,7 +432,8 @@ app/
   printing/
     base.py            PrintBackend interface
     windows_print.py   Windows backend (spooler, DEVMODE, PDFium/GDI, WMI, RAW jobs)
-    linux_cups.py      Linux backend (lp, lpoptions, LibreOffice conversion)
+    linux_cups.py      Linux backend (lp, lpoptions)
+    convert.py         documents/text → PDF via LibreOffice (both OSes), with a cache
     layout.py          page placement shared by printing and preview
     media_constraints.py  paper type ↔ size rules per printer model
     maintenance.py     test page / vendor maintenance jobs (Vendor plugin table, currently Canon IVEC+BJL)
@@ -564,7 +569,7 @@ Check that the scanner shows up in Windows *Scan* / *Devices* (WIA), or in `scan
 <details>
 <summary><b>.docx prints with broken formatting</b></summary>
 
-Without Microsoft Word, Windows prints `.docx` with WordPad, which loses formatting. Save as PDF on the client, or install Word or LibreOffice.
+Install [LibreOffice](https://www.libreoffice.org/) on the server and restart it: documents are then converted to PDF by LibreOffice and keep their formatting, with a preview. Without it, Windows prints `.docx` with WordPad (or Word, if installed), and WordPad loses formatting.
 </details>
 
 ## Extending
@@ -603,7 +608,7 @@ Stack:
 - **No Bonjour/mDNS** announcement yet. IPP clients add the printer by address; iOS/Android can't auto-discover it.
 - **No AirPrint (URF raster)**, so iPhones can't print to it directly yet.
 - **No OCR** for scans.
-- **Office formats on Windows** are printed through whatever program is registered for them; without Word, `.docx` loses formatting.
+- **Documents without LibreOffice** are printed by whatever program is registered for them, with no preview; install LibreOffice for exact results.
 - **Duplex**: the MG2500 driver reports duplex, but the printer has no automatic duplexer, so the driver does manual duplex.
 
 ## License

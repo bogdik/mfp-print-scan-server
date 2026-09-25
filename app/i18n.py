@@ -228,8 +228,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     "err.bad_copies": {"ru": "Некорректное количество копий", "en": "Invalid number of copies"},
     "err.action_unsupported": {"ru": "Это действие не поддерживается для этого принтера", "en": "This action isn't supported by this printer"},
     "err.no_preview": {
-        "ru": "Для файлов {ext} предпросмотр недоступен: их раскладывает на страницы внешняя программа. Доступен для PDF и изображений.",
-        "en": "No preview for {ext} files: an external program lays them out. Preview works for PDFs and images.",
+        "ru": "Для файлов {ext} предпросмотр недоступен. Он есть для PDF и изображений, а для документов и текста — если на сервере установлен LibreOffice.",
+        "en": "No preview for {ext} files. Preview works for PDFs and images, and for documents and text if LibreOffice is installed on the server.",
     },
     "err.this_type": {"ru": "этого типа", "en": "this type"},
     "err.ipp_windows_only": {
