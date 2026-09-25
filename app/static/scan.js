@@ -88,11 +88,12 @@ async function loadScanners() {
   try {
     const res = await fetch("/api/scanners");
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || t("scanners_failed"));
+    if (!res.ok) throw new Error(errorDetail(data, t("scanners_failed")));
     scannerSelect.innerHTML = "";
     if (data.length === 0) {
       scannerSelect.innerHTML = `<option value=''>${escapeHtml(t("no_scanners"))}</option>`;
       setScanMessage(t("scanner_missing"), "error");
+      setScanBusy(false); // no scanner selected — keep Preview/Scan disabled
       return;
     }
     data.forEach((s) => {
@@ -108,6 +109,7 @@ async function loadScanners() {
     await loadCapabilities();
   } catch (err) {
     setScanMessage(err.message, "error");
+    setScanBusy(false); // failed to even list scanners — nothing to scan with
   }
 }
 
@@ -299,7 +301,7 @@ scanPreviewButton.addEventListener("click", async () => {
   try {
     const res = await fetch("/api/scan/preview", { method: "POST", body: form });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || t("preview_error"));
+    if (!res.ok) throw new Error(errorDetail(data, t("preview_error")));
     scanPreviewImg.src = data.image;
     scanPreviewImg.hidden = false;
     scanBedHint.hidden = true;
@@ -331,7 +333,7 @@ scanButton.addEventListener("click", async () => {
   try {
     const res = await fetch("/api/scan", { method: "POST", body: form });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || t("scan_error"));
+    if (!res.ok) throw new Error(errorDetail(data, t("scan_error")));
     setScanMessage(t("scan_done", { name: data.name }), "success");
     loadScans();
   } catch (err) {
@@ -423,7 +425,7 @@ scanList.addEventListener("click", async (e) => {
     try {
       const res = await fetch(`${url}/print`, { method: "POST", body: form });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || t("print_error"));
+      if (!res.ok) throw new Error(errorDetail(data, t("print_error")));
       if (data.status === "failed") throw new Error(data.error);
       setScanMessage(t("scan_printed", { name }), "success");
     } catch (err) {
@@ -443,7 +445,7 @@ scanMergeButton.addEventListener("click", async () => {
       body: JSON.stringify({ names: checkedScans }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || t("merge_error"));
+    if (!res.ok) throw new Error(errorDetail(data, t("merge_error")));
     checkedScans = [];
     setScanMessage(t("merged", { name: data.name, pages: data.pages }), "success");
   } catch (err) {

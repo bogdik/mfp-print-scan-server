@@ -63,6 +63,19 @@ function getJsonCookie(name, fallback) {
   }
 }
 
+// FastAPI's `detail` is a plain string for our own errors, but an array of
+// {msg, loc, ...} objects for its own request-validation (422) failures —
+// e.g. a required field sent empty. `new Error(anArray)` stringifies it via
+// Array.prototype.toString, which is "[object Object]" for each element.
+function errorDetail(data, fallback) {
+  const detail = data && data.detail;
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail) && detail.length) {
+    return detail.map((e) => (e && typeof e === "object" ? e.msg || JSON.stringify(e) : String(e))).join("; ");
+  }
+  return fallback;
+}
+
 const dropzone = document.getElementById("dropzone");
 const dropzoneText = document.getElementById("dropzone-text");
 const fileInput = document.getElementById("file-input");
@@ -304,7 +317,7 @@ maintenanceActions.addEventListener("click", async (e) => {
       { method: "POST" }
     );
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || t("error"));
+    if (!res.ok) throw new Error(errorDetail(data, t("error")));
     if (data.status === "failed") throw new Error(data.error);
     formMessage.textContent = t("action_sent", { action: button.textContent });
     formMessage.className = "message success";
@@ -377,7 +390,7 @@ async function loadPreview() {
     const res = await fetch("/api/preview", { method: "POST", body: formData });
     const data = await res.json();
     if (seq !== previewSeq) return;
-    if (!res.ok) throw new Error(data.detail || t("preview_error"));
+    if (!res.ok) throw new Error(errorDetail(data, t("preview_error")));
     renderPreview(data);
   } catch (err) {
     if (seq !== previewSeq) return;
@@ -491,7 +504,7 @@ form.addEventListener("submit", async (e) => {
   try {
     const res = await fetch("/api/print", { method: "POST", body: formData });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || t("print_error"));
+    if (!res.ok) throw new Error(errorDetail(data, t("print_error")));
 
     if (data.status === "failed") {
       formMessage.textContent = t("error_with", { error: data.error });
