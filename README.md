@@ -110,7 +110,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 | Linux server — maintenance: OS test page, Canon nozzle check and head cleaning (via CUPS/`lp`) | ✅ confirmed on the MG2500 — printed both the CUPS test page and the nozzle pattern, audibly ran head cleaning |
 | Maintenance on Windows: test page (server run as administrator), Canon nozzle check and head cleaning | ✅ confirmed on the MG2541 |
 | Windows autostart task (`register_service.bat`) | ✅ confirmed across a full computer restart: the Task Scheduler task registers, and the server comes up on its own before anyone logs on |
-| Linux systemd unit | ⚠️ example, not yet run on a real system |
+| Linux systemd unit | ✅ confirmed: installed under a dedicated `mfp` system user (enabled for boot), serving real requests and reaching the USB scanner via the `scanner` group |
 
 Reports for other printers and scanners are very welcome, see [Extending](#extending).
 
