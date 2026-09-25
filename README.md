@@ -431,7 +431,7 @@ app/
     linux_cups.py      Linux backend (lp, lpoptions, LibreOffice conversion)
     layout.py          page placement shared by printing and preview
     media_constraints.py  paper type ↔ size rules per printer model
-    maintenance.py     test page / nozzle check / head cleaning (Canon IVEC + BJL job)
+    maintenance.py     test page / vendor maintenance jobs (Vendor plugin table, currently Canon IVEC+BJL)
     pwg.py             PWG Raster decoder
   ipp/
     protocol.py        IPP binary encoding
@@ -573,7 +573,7 @@ Without Microsoft Word, Windows prints `.docx` with WordPad, which loses formatt
 
 **Paper type ↔ size rules for a new model.** Add an entry to `RULES` in `app/printing/media_constraints.py`, keyed by driver name. Use the DEVMODE media/paper ids; you can list them with `DeviceCapabilities` (`DC_MEDIATYPES`, `DC_PAPERS`).
 
-**Maintenance commands for other brands.** `app/printing/maintenance.py` holds the Canon maintenance job. Add a matcher and a command builder in the same style. To find out what a vendor driver sends, pause the job it creates for its own maintenance function and read it with `ReadPrinter`. That's how the Canon format was captured.
+**Maintenance commands for other brands.** `app/printing/maintenance.py` has a small `Vendor` plugin table (`VENDORS`) instead of hardcoding Canon: each entry is a match function (driver name → bool), which of the maintenance actions the brand supports, and a function building the raw job bytes for each. Add one entry for your brand and nothing else needs touching — the API and UI pick it up automatically. The hard part is getting the bytes right: printers ignore anything that doesn't match their own driver's exact framing (a "should be correct" plain-BJL command for Canon was silently ignored — see the module's docstring for why). The reliable way to get them is to **capture a real job from the vendor's own driver**: pause the printer's queue, trigger the action from the vendor's own utility, then read the held job's raw bytes (`win32print.ReadPrinter` on Windows; the spool file under `/var/spool/cups/` on Linux) before releasing it — that's exactly how the Canon bytes here were captured. Full instructions are in the `Vendor` class docstring in `app/printing/maintenance.py`.
 
 **Translations.** All texts are in `app/i18n.py`:
 - keys `web.*` are used by the page and its JavaScript;

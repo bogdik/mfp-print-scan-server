@@ -6,7 +6,7 @@ from pathlib import Path
 from .base import MediaInfo, OptionChoice, PrintBackend, PrinterInfo, PrinterOption, PrintError
 from ..i18n import t
 from . import media_constraints
-from .maintenance import TEST_PAGE, MaintenanceAction, actions_for, canon_command
+from .maintenance import TEST_PAGE, MaintenanceAction, actions_for, raw_command
 from .layout import IMAGE_EXTENSIONS, PDFIUM_LOCK, PageLayout, Placement, fit_page, image_size_pt, open_image
 
 logger = logging.getLogger(__name__)
@@ -376,13 +376,14 @@ class WindowsPrintBackend(PrintBackend):
         return actions_for(self._driver_name(printer_name))
 
     def run_maintenance(self, printer_name: str, action_id: str) -> None:
-        if action_id not in {a.id for a in self.maintenance_actions(printer_name)}:
+        make_and_model = self._driver_name(printer_name)
+        if action_id not in {a.id for a in actions_for(make_and_model)}:
             raise PrintError(t("err.action_unsupported"))
         if action_id == TEST_PAGE.id:
             self._print_test_page(printer_name)
         else:
-            # A RAW spooler job, just like the Canon driver's own maintenance jobs.
-            self._send_raw(printer_name, canon_command(action_id), t(f"mnt.{action_id}"))
+            # A RAW spooler job, just like the vendor driver's own maintenance jobs.
+            self._send_raw(printer_name, raw_command(make_and_model, action_id), t(f"mnt.{action_id}"))
 
     @staticmethod
     def _print_test_page(printer_name: str) -> None:

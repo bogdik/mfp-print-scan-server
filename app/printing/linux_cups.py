@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ..i18n import t
 from .base import OptionChoice, PrintBackend, PrinterInfo, PrinterOption, PrintError
-from .maintenance import TEST_PAGE, MaintenanceAction, actions_for, canon_command
+from .maintenance import TEST_PAGE, MaintenanceAction, actions_for, raw_command
 
 CUPS_TEST_PAGE = Path("/usr/share/cups/data/testprint")
 
@@ -125,26 +125,28 @@ class CupsPrintBackend(PrintBackend):
         if result.returncode != 0:
             raise PrintError(result.stderr.strip() or t("err.cmd_failed", cmd="lp"))
 
-    # Maintenance: written to mirror the Windows backend but not yet run on a
-    # real Linux machine.
-
-    def maintenance_actions(self, printer_name: str) -> list[MaintenanceAction]:
+    def _make_and_model(self, printer_name: str) -> str:
         try:
             out = subprocess.run(["lpoptions", "-p", printer_name], capture_output=True, text=True, timeout=5).stdout
         except (FileNotFoundError, subprocess.TimeoutExpired):
             out = ""
         match = re.search(r"printer-make-and-model='([^']*)'", out)
-        return actions_for(match.group(1) if match else printer_name)
+        return match.group(1) if match else printer_name
+
+    def maintenance_actions(self, printer_name: str) -> list[MaintenanceAction]:
+        return actions_for(self._make_and_model(printer_name))
 
     def run_maintenance(self, printer_name: str, action_id: str) -> None:
-        if action_id not in {a.id for a in self.maintenance_actions(printer_name)}:
+        make_and_model = self._make_and_model(printer_name)
+        if action_id not in {a.id for a in actions_for(make_and_model)}:
             raise PrintError(t("err.action_unsupported"))
         if action_id == TEST_PAGE.id:
             if not CUPS_TEST_PAGE.exists():
                 raise PrintError(t("err.cups_test_page_missing", path=CUPS_TEST_PAGE))
             cmd, data = ["lp", "-d", printer_name, "-t", TEST_PAGE.label, str(CUPS_TEST_PAGE)], None
         else:
-            cmd, data = ["lp", "-d", printer_name, "-o", "raw", "-t", f"MFP: {action_id}", "-"], canon_command(action_id)
+            cmd = ["lp", "-d", printer_name, "-o", "raw", "-t", f"MFP: {action_id}", "-"]
+            data = raw_command(make_and_model, action_id)
         try:
             result = subprocess.run(cmd, input=data, capture_output=True, timeout=30)
         except FileNotFoundError as exc:
