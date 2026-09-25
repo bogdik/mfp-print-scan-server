@@ -14,7 +14,7 @@
 
 [Unit]
 Description=MFP Print & Scan Server (web printing and scanning)
-Documentation=https://github.com/<you>/mfp-print-scan-server
+Documentation=https://github.com/bogdik/mfp-print-scan-server
 # Printing goes through CUPS; start after it and after the network is up.
 After=network-online.target cups.service
 Wants=network-online.target
