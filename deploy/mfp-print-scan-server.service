@@ -1,0 +1,51 @@
+# systemd unit for MFP Print & Scan Server (Linux).
+#
+# Example install (adjust paths and user — see README, "Running as a service"):
+#   sudo cp -r mfp-print-scan-server /opt/mfp-print-scan-server
+#   sudo useradd --system --home /opt/mfp-print-scan-server --shell /usr/sbin/nologin mfp
+#   sudo chown -R mfp:mfp /opt/mfp-print-scan-server
+#   sudo -u mfp /opt/mfp-print-scan-server/start.sh --setup-only
+#   sudo cp /opt/mfp-print-scan-server/deploy/mfp-print-scan-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mfp-print-scan-server
+#
+# Logs:    journalctl -u mfp-print-scan-server -f
+# Status:  systemctl status mfp-print-scan-server
+
+[Unit]
+Description=MFP Print & Scan Server (web printing and scanning)
+Documentation=https://github.com/<you>/mfp-print-scan-server
+# Printing goes through CUPS; start after it and after the network is up.
+After=network-online.target cups.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Account the server runs as. It needs to print (lp) and to reach the USB
+# scanner (group "scanner" on Debian/Ubuntu, "lp" on some other distros).
+# systemd refuses to start if a listed group doesn't exist — check with
+# `getent group scanner` and drop the ones your system doesn't have.
+User=mfp
+Group=mfp
+SupplementaryGroups=lp scanner
+
+WorkingDirectory=/opt/mfp-print-scan-server
+ExecStart=/opt/mfp-print-scan-server/.venv/bin/python /opt/mfp-print-scan-server/run.py
+
+# Settings (language, port, sign-in, users...) live in
+# /opt/mfp-print-scan-server/config.ini — see README, "Configuration".
+# Environment variables override it, e.g.:
+#Environment=MFP_PORT=8080
+#Environment=MFP_DATA_DIR=/var/lib/mfp-print-scan-server
+#Environment=MFP_SCANS_DIR=/var/lib/mfp-print-scan-server/scans
+
+Restart=on-failure
+RestartSec=5
+
+# Light hardening: the app only writes to its own folder (data/, scans/, uploads/).
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

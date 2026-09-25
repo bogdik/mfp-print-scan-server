@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ t('web.title') }}</title>
+  <link rel="stylesheet" href="{{ static_url('style.css') }}" />
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="header-tools">
+        {% if user %}
+        <form method="post" action="/logout" class="user-box">
+          <span class="user-name">👤 {{ user }}</span>
+          <button type="submit" class="ghost-button">{{ t('web.logout') }}</button>
+        </form>
+        {% endif %}
+        <div class="lang-switch" role="group" aria-label="{{ t('web.language') }}">
+          {% for code in langs %}
+          <button type="button" class="lang-button" data-lang="{{ code }}" aria-pressed="{{ 'true' if code == lang else 'false' }}">{{ code | upper }}</button>
+          {% endfor %}
+        </div>
+      </div>
+      <h1>🖨️ {{ t('web.title') }}</h1>
+      <nav class="tabs" role="tablist">
+        <button type="button" class="tab" role="tab" data-tab="print" aria-selected="true">{{ t('web.tab_print') }}</button>
+        <button type="button" class="tab" role="tab" data-tab="scan" aria-selected="false">{{ t('web.tab_scan') }}</button>
+      </nav>
+    </header>
+
+    <div id="tab-print" class="tab-panel narrow">
+      <main class="card">
+        <form id="print-form">
+          <div id="dropzone" class="dropzone">
+            <input type="file" id="file-input" name="file" hidden />
+            <div class="dropzone-content">
+              <span class="dropzone-icon">📄</span>
+              <p id="dropzone-text">{{ t('web.dropzone') }}</p>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="printer-select">{{ t('web.printer') }}</label>
+            <select id="printer-select" name="printer"></select>
+          </div>
+
+          <div class="form-row">
+            <label for="copies-input">{{ t('web.copies') }}</label>
+            <input type="number" id="copies-input" name="copies" value="1" min="1" max="99" />
+          </div>
+
+          <div id="printer-options"></div>
+
+          <div class="actions">
+            <button type="button" id="preview-button" class="secondary-button" disabled>
+              {{ t('web.preview') }}
+            </button>
+            <button type="submit" id="print-button" class="print-button" disabled>
+              {{ t('web.print') }}
+            </button>
+          </div>
+          <p id="form-message" class="message"></p>
+
+          <div id="maintenance" class="maintenance" hidden>
+            <span class="maintenance-label">{{ t('web.maintenance') }}</span>
+            <div id="maintenance-actions" class="maintenance-actions"></div>
+          </div>
+
+          <section id="preview-panel" class="preview" hidden>
+            <div class="preview-header">
+              <span id="preview-info" class="preview-info"></span>
+              <button type="button" id="preview-close" class="ghost-button">{{ t('web.hide') }}</button>
+            </div>
+            <div id="preview-pages" class="preview-pages"></div>
+          </section>
+        </form>
+      </main>
+
+      <section class="card jobs-card">
+        <div class="jobs-header">
+          <h2>{{ t('web.recent_jobs') }}</h2>
+          <div class="scan-list-actions">
+            <button id="clear-jobs" class="ghost-button danger" type="button">{{ t('web.clear') }}</button>
+            <button id="refresh-jobs" class="ghost-button" type="button">{{ t('web.refresh') }}</button>
+          </div>
+        </div>
+        <table class="jobs-table">
+          <colgroup>
+            <col class="col-file" />
+            <col class="col-printer" />
+            <col class="col-copies" />
+            <col class="col-options" />
+            <col class="col-status" />
+            <col class="col-time" />
+            <col class="col-actions" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>{{ t('web.col_file') }}</th>
+              <th>{{ t('web.col_printer') }}</th>
+              <th title="{{ t('web.copies') }}">{{ t('web.copies_short') }}</th>
+              <th>{{ t('web.col_options') }}</th>
+              <th>{{ t('web.col_status') }}</th>
+              <th>{{ t('web.col_time') }}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="jobs-body">
+            <tr><td colspan="7" class="empty">{{ t('web.no_jobs') }}</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <div id="tab-scan" class="tab-panel" hidden>
+      <main class="card scan-layout">
+        <div class="scan-bed-column">
+          <div id="scan-bed" class="scan-bed">
+            <img id="scan-preview-img" alt="" hidden />
+            <p id="scan-bed-hint" class="scan-bed-hint">{{ t('web.scan_hint') }}</p>
+            <div id="scan-selection" class="scan-selection" hidden></div>
+          </div>
+          <p class="scan-bed-caption">{{ t('web.scan_caption') }}</p>
+        </div>
+
+        <div class="scan-settings">
+          <div class="form-row">
+            <label for="scanner-select">{{ t('web.scanner') }}</label>
+            <select id="scanner-select"></select>
+          </div>
+          <div class="form-row">
+            <label for="scan-area">{{ t('web.area') }}</label>
+            <select id="scan-area">
+              <option value="">{{ t('web.area_all') }}</option>
+              <option value="210x297">A4 (210×297)</option>
+              <option value="148x210">A5 (148×210)</option>
+              <option value="105x148">A6 (105×148)</option>
+              <option value="216x279">Letter (216×279)</option>
+              <option value="102x152">{{ t('web.area_photo') }}</option>
+              <option value="90x50">{{ t('web.area_card') }}</option>
+              <option value="custom" hidden>{{ t('web.area_custom') }}</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="scan-mode">{{ t('web.mode') }}</label>
+            <select id="scan-mode"></select>
+          </div>
+          <div class="form-row">
+            <label for="scan-resolution">{{ t('web.resolution') }}</label>
+            <select id="scan-resolution"></select>
+          </div>
+          <div class="form-row" id="scan-brightness-row">
+            <label for="scan-brightness">{{ t('web.brightness') }} <output id="scan-brightness-value">0</output></label>
+            <input type="range" id="scan-brightness" min="-100" max="100" value="0" step="5" />
+          </div>
+          <div class="form-row" id="scan-contrast-row">
+            <label for="scan-contrast">{{ t('web.contrast') }} <output id="scan-contrast-value">0</output></label>
+            <input type="range" id="scan-contrast" min="-100" max="100" value="0" step="5" />
+          </div>
+          <div class="form-row">
+            <label for="scan-format">{{ t('web.format') }}</label>
+            <select id="scan-format">
+              <option value="jpeg">JPEG</option>
+              <option value="png">PNG</option>
+              <option value="pdf">PDF</option>
+              <option value="tiff">TIFF</option>
+            </select>
+          </div>
+          <p id="scan-estimate" class="scan-estimate"></p>
+
+          <div class="actions">
+            <button type="button" id="scan-preview-button" class="secondary-button" disabled>{{ t('web.preview') }}</button>
+            <button type="button" id="scan-button" class="print-button" disabled>{{ t('web.scan') }}</button>
+          </div>
+          <p id="scan-message" class="message"></p>
+        </div>
+      </main>
+
+      <section class="card">
+        <div class="jobs-header">
+          <h2>{{ t('web.scans') }}</h2>
+          <div class="scan-list-actions">
+            <button id="scan-merge" class="ghost-button" type="button" disabled>{{ t('web.merge_pdf') }}</button>
+            <button id="scan-refresh" class="ghost-button" type="button">{{ t('web.refresh') }}</button>
+          </div>
+        </div>
+        <div id="scan-list" class="scan-list">
+          <p class="empty">{{ t('web.no_scans') }}</p>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    window.I18N = {{ messages | tojson }};
+  </script>
+  <script src="{{ static_url('app.js') }}"></script>
+  <script src="{{ static_url('scan.js') }}"></script>
+</body>
+</html>

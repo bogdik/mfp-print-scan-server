@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ t('web.login_title') }} — {{ t('web.title') }}</title>
+  <link rel="stylesheet" href="{{ static_url('style.css') }}" />
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="header-tools">
+        <div class="lang-switch" role="group" aria-label="{{ t('web.language') }}">
+          {% for code in langs %}
+          <button type="button" class="lang-button" data-lang="{{ code }}" aria-pressed="{{ 'true' if code == lang else 'false' }}">{{ code | upper }}</button>
+          {% endfor %}
+        </div>
+      </div>
+      <h1>🖨️ {{ t('web.title') }}</h1>
+    </header>
+
+    <main class="card login-card">
+      <h2>{{ t('web.login_title') }}</h2>
+      <form method="post" action="/login" class="login-form">
+        <input type="hidden" name="next" value="{{ next }}" />
+        <label for="username">{{ t('web.username') }}</label>
+        <input type="text" id="username" name="username" value="{{ username }}" autocomplete="username" autofocus required />
+        <label for="password">{{ t('web.password') }}</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required />
+        <label class="login-remember">
+          <input type="checkbox" name="remember" value="1" checked />
+          {{ t('web.remember') }}
+        </label>
+        {% if error %}<p class="message error" role="alert">{{ error }}</p>{% endif %}
+        <button type="submit" class="print-button">{{ t('web.login_button') }}</button>
+      </form>
+    </main>
+  </div>
+
+  <script>
+    // Same language switch as the main page: remember in a cookie, reload.
+    document.querySelectorAll(".lang-button").forEach((button) =>
+      button.addEventListener("click", () => {
+        document.cookie = `lang=${button.dataset.lang}; path=/; max-age=31536000; samesite=lax`;
+        location.reload();
+      })
+    );
+  </script>
+</body>
+</html>
