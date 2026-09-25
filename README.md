@@ -91,6 +91,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 - Optional **sign-in** (`auth = yes` in `config.ini`): users and passwords (hashed or plain) in the config, remembered sessions, brute-force lockout, HTTP Basic for scripts, optional Basic auth for IPP.
 - One **config file** (`config.ini`) for language, ports, folders and users.
 - **English / Russian** UI with a remembered choice; server messages follow the page language.
+- **Remembered print/scan settings**: the last printer, copies, per-printer options, and the last scanner, area, mode, resolution, brightness/contrast and format are kept in a cookie in your browser (not on the server) and pre-filled next time.
 - Works from phones (responsive layout).
 - One-click start on Windows (`start.bat`) and a start script for Linux (`start.sh`).
 - **No admin rights needed** on Windows: per-user printer settings, spooler access only.

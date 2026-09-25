@@ -28,6 +28,27 @@ let scanBusy = false;
 let scannersLoaded = false;
 let checkedScans = []; // names in the order they were ticked (= PDF page order)
 
+// --- Remembered scan settings ------------------------------------------------
+// Scanner, area preset, mode, resolution, brightness/contrast and format —
+// getCookie/setCookie/getJsonCookie come from app.js, loaded before this file.
+// A custom hand-drawn area isn't remembered (only named presets / "whole
+// glass"), since the physical document position differs scan to scan.
+
+const SCAN_PREFS_COOKIE = "scan_prefs";
+const scanPrefs = getJsonCookie(SCAN_PREFS_COOKIE, {
+  scanner: null, area: "", mode: null, resolution: null, format: "jpeg", brightness: 0, contrast: 0,
+});
+
+function saveScanPrefs() {
+  setCookie(SCAN_PREFS_COOKIE, JSON.stringify(scanPrefs));
+}
+
+scanFormat.value = scanPrefs.format || "jpeg";
+scanBrightness.value = scanPrefs.brightness || 0;
+scanContrast.value = scanPrefs.contrast || 0;
+document.getElementById("scan-brightness-value").value = scanBrightness.value;
+document.getElementById("scan-contrast-value").value = scanContrast.value;
+
 // --- Tabs ------------------------------------------------------------------
 
 function showTab(name) {
@@ -80,6 +101,9 @@ async function loadScanners() {
       opt.textContent = s.name;
       scannerSelect.appendChild(opt);
     });
+    if (scanPrefs.scanner && data.some((s) => s.id === scanPrefs.scanner)) {
+      scannerSelect.value = scanPrefs.scanner;
+    }
     setScanMessage("");
     await loadCapabilities();
   } catch (err) {
@@ -107,11 +131,17 @@ async function loadCapabilities() {
 
     bedMm = caps.bed_mm;
     scanBed.style.aspectRatio = `${bedMm[0]} / ${bedMm[1]}`;
-    fillSelect(scanMode, caps.modes, "color");
+    const preferredMode = caps.modes.some((m) => m.value === scanPrefs.mode) ? scanPrefs.mode : "color";
+    fillSelect(scanMode, caps.modes, preferredMode);
     const defaultDpi = caps.resolutions.includes(300) ? 300 : caps.resolutions[Math.floor(caps.resolutions.length / 2)];
-    fillSelect(scanResolution, caps.resolutions.map((r) => ({ value: r, label: `${r} dpi` })), defaultDpi);
+    const preferredDpi = caps.resolutions.includes(Number(scanPrefs.resolution)) ? scanPrefs.resolution : defaultDpi;
+    fillSelect(scanResolution, caps.resolutions.map((r) => ({ value: r, label: `${r} dpi` })), preferredDpi);
     document.getElementById("scan-brightness-row").hidden = !caps.brightness;
     document.getElementById("scan-contrast-row").hidden = !caps.contrast;
+    if ([...scanArea.options].some((o) => o.value === scanPrefs.area)) {
+      scanArea.value = scanPrefs.area;
+      scanArea.dispatchEvent(new Event("change"));
+    }
     updateEstimate();
   } catch (err) {
     setScanMessage(err.message, "error");
@@ -121,6 +151,10 @@ async function loadCapabilities() {
 }
 
 scannerSelect.addEventListener("change", loadCapabilities);
+scannerSelect.addEventListener("change", () => {
+  scanPrefs.scanner = scannerSelect.value;
+  saveScanPrefs();
+});
 
 // --- Area selection ----------------------------------------------------------
 
@@ -211,6 +245,10 @@ scanArea.addEventListener("change", () => {
     selection = clampSelection({ x: 0, y: 0, w, h });
   }
   renderSelection();
+  if (scanArea.value !== "custom") {
+    scanPrefs.area = scanArea.value;
+    saveScanPrefs();
+  }
 });
 
 // --- Estimate ------------------------------------------------------------------
@@ -229,6 +267,25 @@ function updateEstimate() {
 [scanResolution, scanMode].forEach((el) => el.addEventListener("change", updateEstimate));
 [[scanBrightness, "scan-brightness-value"], [scanContrast, "scan-contrast-value"]].forEach(([input, out]) =>
   input.addEventListener("input", () => (document.getElementById(out).value = input.value))
+);
+
+scanMode.addEventListener("change", () => {
+  scanPrefs.mode = scanMode.value;
+  saveScanPrefs();
+});
+scanResolution.addEventListener("change", () => {
+  scanPrefs.resolution = scanResolution.value;
+  saveScanPrefs();
+});
+scanFormat.addEventListener("change", () => {
+  scanPrefs.format = scanFormat.value;
+  saveScanPrefs();
+});
+[[scanBrightness, "brightness"], [scanContrast, "contrast"]].forEach(([input, key]) =>
+  input.addEventListener("change", () => {
+    scanPrefs[key] = Number(input.value) || 0;
+    saveScanPrefs();
+  })
 );
 
 // --- Preview & scan -----------------------------------------------------------

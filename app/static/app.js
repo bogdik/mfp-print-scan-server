@@ -41,6 +41,28 @@ document.querySelectorAll(".lang-button").forEach((button) =>
   })
 );
 
+// --- Cookie helpers (shared with scan.js) -----------------------------------
+// Print/scan settings are remembered per browser for a year, the same way
+// as the language choice above — no server-side storage involved.
+
+function getCookie(name) {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function setCookie(name, value) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=31536000; samesite=lax`;
+}
+
+function getJsonCookie(name, fallback) {
+  try {
+    const raw = getCookie(name);
+    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 const dropzone = document.getElementById("dropzone");
 const dropzoneText = document.getElementById("dropzone-text");
 const fileInput = document.getElementById("file-input");
@@ -57,6 +79,19 @@ const previewPanel = document.getElementById("preview-panel");
 const previewInfo = document.getElementById("preview-info");
 const previewPages = document.getElementById("preview-pages");
 const previewClose = document.getElementById("preview-close");
+
+// --- Remembered print settings ---------------------------------------------
+// Printer, copies and each printer's own last-used options (keyed by printer
+// name, since option keys differ between drivers). A saved value that no
+// longer matches the current driver's choices is silently ignored — the
+// browser just leaves the <select> on its first option.
+
+const PRINT_PREFS_COOKIE = "print_prefs";
+const printPrefs = getJsonCookie(PRINT_PREFS_COOKIE, { printer: null, copies: 1, options: {} });
+
+function savePrintPrefs() {
+  setCookie(PRINT_PREFS_COOKIE, JSON.stringify(printPrefs));
+}
 
 const STATUS_LABELS = {
   queued: t("status_queued"),
@@ -120,11 +155,16 @@ async function loadPrinters() {
         if (p.is_default) opt.selected = true;
         printerSelect.appendChild(opt);
       });
+      // A remembered printer wins over the OS default, if it's still there.
+      if (printPrefs.printer && printers.some((p) => p.name === printPrefs.printer)) {
+        printerSelect.value = printPrefs.printer;
+      }
     }
   } catch (err) {
     formMessage.textContent = t("printers_failed");
     formMessage.className = "message error";
   }
+  copiesInput.value = printPrefs.copies || 1;
   updateDropzoneLabel();
   loadPrinterOptions();
 }
@@ -138,6 +178,7 @@ async function loadPrinterOptions() {
     const res = await fetch(`/api/printers/${encodeURIComponent(printer)}/options`);
     if (!res.ok) throw new Error(await res.text());
     const options = await res.json();
+    const savedOptions = printPrefs.options[printer] || {};
     options.forEach((opt) => {
       const row = document.createElement("div");
       row.className = "form-row";
@@ -149,11 +190,12 @@ async function loadPrinterOptions() {
       const select = document.createElement("select");
       select.id = `opt-${opt.key}`;
       select.dataset.optionKey = opt.key;
+      const preferred = opt.key in savedOptions ? savedOptions[opt.key] : opt.default;
       opt.choices.forEach((choice) => {
         const el = document.createElement("option");
         el.value = choice.value;
         el.textContent = choice.label;
-        if (choice.value === opt.default) el.selected = true;
+        if (choice.value === preferred) el.selected = true;
         select.appendChild(el);
       });
 
@@ -285,6 +327,19 @@ function collectSelectedOptions() {
 
 printerSelect.addEventListener("change", loadPrinterOptions);
 printerOptionsContainer.addEventListener("change", schedulePreview);
+
+printerSelect.addEventListener("change", () => {
+  printPrefs.printer = printerSelect.value;
+  savePrintPrefs();
+});
+copiesInput.addEventListener("change", () => {
+  printPrefs.copies = Number(copiesInput.value) || 1;
+  savePrintPrefs();
+});
+printerOptionsContainer.addEventListener("change", () => {
+  printPrefs.options[printerSelect.value] = collectSelectedOptions();
+  savePrintPrefs();
+});
 
 // --- Preview -------------------------------------------------------------
 // While the panel is open it re-renders on any change of file / printer /
