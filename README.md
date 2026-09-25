@@ -107,8 +107,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 | Linux server (CUPS printing) | ✅ printing was tested at the start of the project |
 | Linux server — SANE scanning (preview, area select, color/gray/lineart, JPEG/PNG/TIFF/PDF, merge to PDF) | ✅ tested end-to-end against a real Canon PIXMA MG2500 over `scanimage` |
 | Linux server — print preview (PDF/image rendering, margins) | ✅ tested; exact hardware margins aren't available on Linux (falls back to A4 + 5 mm) |
-| Linux server — maintenance: Canon nozzle check and head cleaning (raw job via CUPS) | ✅ confirmed on the MG2500 — printed the nozzle pattern, audibly ran head cleaning |
-| Linux server — maintenance: OS test page | ⚠️ written against documented tool output, not yet run on real hardware |
+| Linux server — maintenance: OS test page, Canon nozzle check and head cleaning (via CUPS/`lp`) | ✅ confirmed on the MG2500 — printed both the CUPS test page and the nozzle pattern, audibly ran head cleaning |
 | Maintenance on Windows: test page (server run as administrator), Canon nozzle check and head cleaning | ✅ confirmed on the MG2541 |
 | Windows autostart task (`register_service.bat`) | ⚠️ background run with a log file tested; registering the task itself needs admin rights and hasn't been confirmed yet |
 | Linux systemd unit | ⚠️ example, not yet run on a real system |
@@ -606,7 +605,6 @@ Stack:
 - **No OCR** for scans.
 - **Office formats on Windows** are printed through whatever program is registered for them; without Word, `.docx` loses formatting.
 - **Duplex**: the MG2500 driver reports duplex, but the printer has no automatic duplexer, so the driver does manual duplex.
-- The **Linux server**'s OS test page (maintenance) hasn't been run on real hardware yet; Canon nozzle check/head cleaning and scanning (SANE) have and work.
 
 ## License
 
