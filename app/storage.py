@@ -136,10 +136,12 @@ class JobStore:
         with self._lock:
             return self._jobs.get(job_id)
 
-    def list(self, limit: int = 50) -> list[JobOut]:
+    def list(self, limit: int | None = 50) -> list[JobOut]:
+        """limit=None returns the full history (for usage reports); the web
+        UI's own job list only ever wants the most recent ones."""
         with self._lock:
             jobs = sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)
-            return jobs[:limit]
+            return jobs if limit is None else jobs[:limit]
 
 
 job_store = JobStore(DATA_DIR / "jobs.json")

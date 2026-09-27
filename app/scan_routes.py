@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from .i18n import t
 from .models import JobOut, JobStatus
 from .printing.base import PrintBackend
+from .printing.convert import page_count
 from .scanning.base import ScanBackend, ScanError, ScannerBusy, ScanParams
 from .scanning.store import FORMATS, ScanRecord, ScanStore
 from .storage import job_store
@@ -140,6 +141,7 @@ def create_router(print_backend: PrintBackend, scanner: ScanBackend, scans_dir: 
 
     @router.post("/scans/{name}/print", response_model=JobOut)
     async def print_scan(
+        request: Request,
         name: str,
         printer: Optional[str] = Form(None),
         copies: int = Form(1),
@@ -160,6 +162,7 @@ def create_router(print_backend: PrintBackend, scanner: ScanBackend, scans_dir: 
         job = JobOut(
             id=uuid.uuid4().hex, filename=t("job.scan_suffix", name=name), printer=printer, copies=copies,
             options=parsed or None, status=JobStatus.QUEUED, error=None, created_at=datetime.now(),
+            user=getattr(request.state, "user", None), pages=await run_in_threadpool(page_count, path),
         )
         job_store.add(job)
         try:

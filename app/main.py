@@ -1,5 +1,7 @@
 import asyncio
 import base64
+import csv
+import io
 import json
 import logging
 import uuid
@@ -11,7 +13,7 @@ from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
@@ -26,11 +28,13 @@ from .ipp.mdns import MdnsAnnouncer
 from .ipp.printer import IppPrinter, is_supported as ipp_supported
 from .models import (
     JobOut, JobStatus, OptionChoiceOut, PreviewOut, PrinterOptionOut, PrinterOut, PrinterStatusOut, SupplyLevelOut,
+    UsageByKeyOut, UsageOut, UsageTotalsOut,
 )
 from .preview import PreviewUnavailable, render_preview
 from .scan_routes import create_router as create_scan_router
 from .scanning.factory import get_scan_backend
 from .printing.base import PrintError
+from .printing.convert import page_count
 from .printing.factory import get_backend
 from .printing.layout import DEFAULT_LAYOUT
 from .storage import job_store
@@ -366,6 +370,7 @@ async def preview_file(
 
 @app.post("/api/print", response_model=JobOut)
 async def print_file(
+    request: Request,
     file: UploadFile = File(...),
     printer: Optional[str] = Form(None),
     copies: int = Form(1),
@@ -390,6 +395,8 @@ async def print_file(
         status=JobStatus.QUEUED,
         error=None,
         created_at=datetime.now(),
+        user=getattr(request.state, "user", None),
+        pages=await run_in_threadpool(page_count, dest),
     )
     job_store.add(job)
 
@@ -457,3 +464,58 @@ def delete_job(job_id: str):
 def clear_jobs():
     """Clears finished jobs (and their uploaded files); ones still printing stay."""
     return {"deleted": len(job_store.clear())}
+
+
+def _sheets(job: JobOut) -> int:
+    """Paper actually used, in sheets; 0 (not None) when pages is unknown, so
+    it can be summed without special-casing — a report that undercounts a
+    few unknown jobs is more useful than one that crashes or lies with a
+    fake page count."""
+    return (job.pages or 0) * job.copies
+
+
+def _usage_by(jobs: list[JobOut], key) -> list[UsageByKeyOut]:
+    totals: dict[str, list[int]] = {}
+    for job in jobs:
+        bucket = totals.setdefault(key(job) or t("usage.unknown"), [0, 0])
+        bucket[0] += 1
+        bucket[1] += _sheets(job)
+    return [
+        UsageByKeyOut(key=k, jobs=v[0], sheets=v[1])
+        for k, v in sorted(totals.items(), key=lambda kv: kv[1][0], reverse=True)
+    ]
+
+
+@app.get("/api/usage", response_model=UsageOut)
+def usage_report():
+    jobs = job_store.list(limit=None)
+    totals = UsageTotalsOut(
+        jobs=len(jobs),
+        sent=sum(1 for j in jobs if j.status == JobStatus.SENT),
+        failed=sum(1 for j in jobs if j.status == JobStatus.FAILED),
+        sheets=sum(_sheets(j) for j in jobs),
+    )
+    return UsageOut(
+        totals=totals,
+        by_user=_usage_by(jobs, lambda j: j.user),
+        by_printer=_usage_by(jobs, lambda j: j.printer),
+    )
+
+
+@app.get("/api/usage.csv")
+def usage_csv():
+    jobs = job_store.list(limit=None)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["created_at", "user", "printer", "filename", "copies", "pages", "sheets", "status", "error"])
+    for job in jobs:
+        writer.writerow([
+            job.created_at.isoformat(timespec="seconds"), job.user or "", job.printer or "",
+            job.filename, job.copies, job.pages if job.pages is not None else "", _sheets(job),
+            job.status.value, job.error or "",
+        ])
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="usage.csv"'},
+    )

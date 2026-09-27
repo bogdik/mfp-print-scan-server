@@ -18,6 +18,7 @@ import threading
 from pathlib import Path
 
 from ..config import settings
+from .layout import IMAGE_EXTENSIONS, PDFIUM_LOCK
 
 logger = logging.getLogger(__name__)
 
@@ -124,3 +125,29 @@ def to_pdf(path: Path) -> Path | None:
             return None
         finally:
             shutil.rmtree(work, ignore_errors=True)
+
+
+def page_count(path: Path) -> int | None:
+    """Best-effort sheet count for job history / usage stats. Goes through
+    the same to_pdf() (and its cache) that printing itself uses, so calling
+    this before print_file() doesn't convert the document twice. None means
+    "couldn't tell" (unknown format, no LibreOffice, conversion failed) —
+    the caller should treat that as "not counted", not zero."""
+    suffix = path.suffix.lower()
+    if suffix in IMAGE_EXTENSIONS:
+        return 1
+    pdf = path if suffix == ".pdf" else to_pdf(path)
+    if pdf is None:
+        return None
+    try:
+        import pypdfium2 as pdfium
+
+        with PDFIUM_LOCK:
+            doc = pdfium.PdfDocument(str(pdf))
+            try:
+                return len(doc)
+            finally:
+                doc.close()
+    except Exception:
+        logger.warning("Couldn't count pages in %s", path.name, exc_info=True)
+        return None

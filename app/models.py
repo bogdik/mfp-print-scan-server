@@ -53,6 +53,25 @@ class PrinterStatusOut(BaseModel):
     supplies: list[SupplyLevelOut] = []
 
 
+class UsageTotalsOut(BaseModel):
+    jobs: int
+    sent: int
+    failed: int
+    sheets: int  # sum of pages * copies, counting only jobs where pages is known
+
+
+class UsageByKeyOut(BaseModel):
+    key: str  # a user name, or a printer name; "unknown" when not recorded
+    jobs: int
+    sheets: int
+
+
+class UsageOut(BaseModel):
+    totals: UsageTotalsOut
+    by_user: list[UsageByKeyOut]
+    by_printer: list[UsageByKeyOut]
+
+
 class JobOut(BaseModel):
     id: str
     filename: str
@@ -63,3 +82,5 @@ class JobOut(BaseModel):
     error: str | None
     created_at: datetime
     note: str | None = None  # e.g. settings the server had to adjust
+    user: str | None = None  # who sent it, when known (auth=yes, or an IPP client's own user name)
+    pages: int | None = None  # best-effort sheet count (see printing/convert.py's page_count()); None = not counted

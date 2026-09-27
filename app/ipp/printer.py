@@ -22,6 +22,7 @@ from ..config import settings
 from ..i18n import t
 from ..models import JobOut, JobStatus
 from ..printing.base import MediaInfo, PrintBackend, PrintError
+from ..printing.convert import page_count
 from ..storage import job_store
 from .protocol import (
     Attr, IppError, Request, collection, encode_response,
@@ -497,6 +498,7 @@ class IppPrinter:
         job_store.add(JobOut(
             id=web_job_id, filename=f"{name} (IPP, {user})", printer=printer,
             copies=copies, options=options, status=JobStatus.QUEUED, error=None, created_at=datetime.now(),
+            user=user if user != "anonymous" else None,
         ))
         return job
 
@@ -612,6 +614,7 @@ class IppPrinter:
 
         def run():
             job.state, job.reasons, job.processing = JOB_PROCESSING, "job-printing", time.time()
+            job_store.update(job.web_job_id, pages=page_count(path))
             try:
                 # PDF/PWG pages are already the whole sheet with the margins we
                 # advertised; a JPEG is just a picture — fit it to the page.

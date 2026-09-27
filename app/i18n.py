@@ -246,6 +246,15 @@ MESSAGES: dict[str, dict[str, str]] = {
     "status.reason.media-problem": {"ru": "проблема с бумагой", "en": "media problem"},
     "status.reason.service-requested": {"ru": "требуется обслуживание", "en": "service requested"},
     "status.reason.paused": {"ru": "приостановлен", "en": "paused"},
+    "usage.unknown": {"ru": "неизвестно", "en": "unknown"},
+    "usage.title": {"ru": "Статистика печати", "en": "Print usage"},
+    "usage.jobs": {"ru": "заданий", "en": "jobs"},
+    "usage.sheets": {"ru": "листов", "en": "sheets"},
+    "usage.sent": {"ru": "выполнено", "en": "sent"},
+    "usage.failed": {"ru": "ошибок", "en": "failed"},
+    "usage.by_user": {"ru": "По пользователям", "en": "By user"},
+    "usage.by_printer": {"ru": "По принтерам", "en": "By printer"},
+    "usage.download_csv": {"ru": "Скачать CSV", "en": "Download CSV"},
 
     # --- Server errors & notes ---------------------------------------------------
     "err.bad_options": {"ru": "Некорректный формат параметров печати", "en": "Invalid print options format"},

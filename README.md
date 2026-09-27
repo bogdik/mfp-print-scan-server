@@ -72,6 +72,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 - **Paper type ↔ size rules**: some printers reject certain combinations, e.g. glossy photo paper in 13×18 on a Canon (error 4102). The server swaps in a compatible paper type and records a note on the job. The UI does the same as you pick options.
 - **Job history**: status, settings and notes. Stored in a JSON file, so it survives restarts. Delete single entries or clear it all; uploaded files are removed with their entries.
 - **Live printer status** next to the printer picker: idle/printing/stopped/offline, plus the reason when there is one (out of paper, cover open, jammed, ...), read from the OS (IPP on Linux, WMI on Windows) — not guessed. **Ink/toner levels** too, shown as a small bar per color, when the driver reports them (many CUPS drivers do via IPP marker levels; not currently for a USB-only Canon on the generic driver this project itself uses — see [Known limitations](#known-limitations)).
+- **Usage report**: a "Print usage" panel above the job history totals jobs/sheets/sent/failed and breaks them down by user (when known — logged-in username, or the IPP client's own user name) and by printer, with a **CSV export** for accounting or handing to whoever pays for the toner.
 
 ### Network printer (IPP Everywhere)
 - The server is an IPP/2.0 printer on port 631 (`ipp://<host>:631/ipp/print`).
@@ -527,6 +528,8 @@ The UI is a thin client over a JSON API; interactive docs are at `http://<server
 | POST | `/api/preview` | multipart: `file`, `printer`, `options` → PNG pages as data URLs |
 | GET | `/api/jobs` | job history |
 | DELETE | `/api/jobs/{id}` · `/api/jobs` | delete one entry · clear finished jobs |
+| GET | `/api/usage` | usage totals (jobs/sheets/sent/failed) plus per-user and per-printer breakdowns, over the full job history |
+| GET | `/api/usage.csv` | the full job history as a CSV download (one row per job: user, printer, pages, sheets, status, …) |
 | GET | `/api/scanners` · `/api/scanners/capabilities?scanner_id=…` | scanners and their capabilities |
 | POST | `/api/scan/preview` | preview of the whole glass |
 | POST | `/api/scan` | `scanner_id`, `resolution`, `mode`, `x`/`y`/`width`/`height` (mm), `brightness`/`contrast` (−100…100), `format` |
@@ -679,6 +682,7 @@ Stack:
 - **Documents without LibreOffice** are printed by whatever program is registered for them, with no preview; install LibreOffice for exact results.
 - **Duplex**: the MG2500 driver reports duplex, but the printer has no automatic duplexer, so the driver does manual duplex.
 - **Ink/toner levels aren't universal.** They come from the driver (IPP marker levels on Linux; nothing generic on Windows yet), so a USB inkjet on a generic driver — like this project's own Canon MG2500 — won't show them, while many laser printers and network-aware drivers will. The status itself (idle/printing/error) is separate and works regardless.
+- **Usage report attribution is best-effort.** The "user" column is only filled in when it's actually known: the logged-in web username (`auth = yes`) or an IPP client's own `requesting-user-name` — anonymous web uploads and print-via-`lp`/CUPS jobs show as "unknown". Page counts likewise come from `page_count()` (LibreOffice + PDFium) and are `None`/blank for formats it can't inspect (e.g. raw PWG Raster sent by an IPP client), which the report treats as 0 sheets rather than guessing.
 
 ## License
 

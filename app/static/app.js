@@ -592,6 +592,36 @@ document.getElementById("clear-jobs").addEventListener("click", async () => {
   loadJobs();
 });
 
+const usageToggle = document.getElementById("usage-toggle");
+const usagePanel = document.getElementById("usage-panel");
+
+function renderUsageRows(tbody, rows) {
+  tbody.innerHTML = rows
+    .map((r) => `<tr><td>${escapeHtml(r.key)}</td><td>${r.jobs}</td><td>${r.sheets}</td></tr>`)
+    .join("");
+}
+
+async function loadUsage() {
+  try {
+    const res = await fetch("/api/usage");
+    if (!res.ok) throw new Error(await res.text());
+    const usage = await res.json();
+    document.getElementById("usage-jobs").textContent = usage.totals.jobs;
+    document.getElementById("usage-sheets").textContent = usage.totals.sheets;
+    document.getElementById("usage-sent").textContent = usage.totals.sent;
+    document.getElementById("usage-failed").textContent = usage.totals.failed;
+    renderUsageRows(document.getElementById("usage-by-user"), usage.by_user);
+    renderUsageRows(document.getElementById("usage-by-printer"), usage.by_printer);
+  } catch (err) {
+    // silent — usage panel is non-critical
+  }
+}
+
+usageToggle.addEventListener("click", () => {
+  usagePanel.hidden = !usagePanel.hidden;
+  if (!usagePanel.hidden) loadUsage();
+});
+
 loadPrinters();
 loadJobs();
 setInterval(loadJobs, 5000);

@@ -87,9 +87,35 @@
         <div class="jobs-header">
           <h2>{{ t('web.recent_jobs') }}</h2>
           <div class="scan-list-actions">
+            <button id="usage-toggle" class="ghost-button" type="button">{{ t('usage.title') }}</button>
             <button id="clear-jobs" class="ghost-button danger" type="button">{{ t('web.clear') }}</button>
             <button id="refresh-jobs" class="ghost-button" type="button">{{ t('web.refresh') }}</button>
           </div>
+        </div>
+        <div id="usage-panel" class="usage-panel" hidden>
+          <div class="usage-totals">
+            <span><strong id="usage-jobs">0</strong> {{ t('usage.jobs') }}</span>
+            <span><strong id="usage-sheets">0</strong> {{ t('usage.sheets') }}</span>
+            <span><strong id="usage-sent">0</strong> {{ t('usage.sent') }}</span>
+            <span><strong id="usage-failed">0</strong> {{ t('usage.failed') }}</span>
+          </div>
+          <div class="usage-breakdowns">
+            <div>
+              <h3>{{ t('usage.by_user') }}</h3>
+              <table class="usage-table">
+                <thead><tr><th></th><th>{{ t('usage.jobs') }}</th><th>{{ t('usage.sheets') }}</th></tr></thead>
+                <tbody id="usage-by-user"></tbody>
+              </table>
+            </div>
+            <div>
+              <h3>{{ t('usage.by_printer') }}</h3>
+              <table class="usage-table">
+                <thead><tr><th></th><th>{{ t('usage.jobs') }}</th><th>{{ t('usage.sheets') }}</th></tr></thead>
+                <tbody id="usage-by-printer"></tbody>
+              </table>
+            </div>
+          </div>
+          <a id="usage-csv" class="ghost-button" href="/api/usage.csv" download>{{ t('usage.download_csv') }}</a>
         </div>
         <table class="jobs-table">
           <colgroup>
