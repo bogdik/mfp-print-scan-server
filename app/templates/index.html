@@ -130,6 +130,9 @@
         <div class="jobs-header">
           <h2>{{ t('web.recent_jobs') }}</h2>
           <div class="scan-list-actions">
+            <label class="notify-toggle" title="{{ t('web.notify_hint') }}">
+              <input type="checkbox" id="notify-toggle" /> 🔔 {{ t('web.notify_label') }}
+            </label>
             <button id="usage-toggle" class="ghost-button" type="button">{{ t('usage.title') }}</button>
             <button id="clear-jobs" class="ghost-button danger" type="button">{{ t('web.clear') }}</button>
             <button id="refresh-jobs" class="ghost-button" type="button">{{ t('web.refresh') }}</button>

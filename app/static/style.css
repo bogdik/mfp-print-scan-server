@@ -165,7 +165,17 @@ body {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
+}
+
+.notify-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  cursor: pointer;
 }
 
 .scan-list {

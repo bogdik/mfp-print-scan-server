@@ -683,11 +683,61 @@ function escapeHtml(str) {
   return div.innerHTML.replace(/"/g, "&quot;");
 }
 
+const NOTIFY_COOKIE = "notify_jobs";
+// null = not yet primed; the first poll after enabling only records what's
+// already there, so reopening the tab doesn't replay the whole history.
+let notifiedJobIds = null;
+
+function notificationsWanted() {
+  return getCookie(NOTIFY_COOKIE) === "1" && typeof Notification !== "undefined" && Notification.permission === "granted";
+}
+
+function checkJobNotifications(jobs) {
+  if (!notificationsWanted()) {
+    notifiedJobIds = null;
+    return;
+  }
+  const finished = jobs.filter((j) => j.status !== "queued");
+  if (notifiedJobIds === null) {
+    notifiedJobIds = new Set(finished.map((j) => j.id));
+    return;
+  }
+  const titles = { sent: t("notify_sent_title"), failed: t("notify_failed_title"), cancelled: t("notify_cancelled_title") };
+  for (const job of finished) {
+    if (notifiedJobIds.has(job.id)) continue;
+    notifiedJobIds.add(job.id);
+    try {
+      new Notification(titles[job.status] || job.status, { body: job.filename });
+    } catch (err) {
+      // some browsers throw for a Notification built outside a service
+      // worker under certain settings — not worth surfacing to the user
+    }
+  }
+}
+
+const notifyToggle = document.getElementById("notify-toggle");
+notifyToggle.checked = notificationsWanted();
+notifyToggle.addEventListener("change", async () => {
+  if (!notifyToggle.checked) {
+    setCookie(NOTIFY_COOKIE, "0");
+    return;
+  }
+  if (typeof Notification === "undefined" || (await Notification.requestPermission()) !== "granted") {
+    notifyToggle.checked = false;
+    setCookie(NOTIFY_COOKIE, "0");
+    return;
+  }
+  setCookie(NOTIFY_COOKIE, "1");
+  notifiedJobIds = null; // re-prime so it doesn't fire for old history
+});
+
 async function loadJobs() {
   try {
     const res = await fetch("/api/jobs");
     if (!res.ok) throw new Error(await res.text());
-    renderJobs(await res.json());
+    const jobs = await res.json();
+    renderJobs(jobs);
+    checkJobNotifications(jobs);
   } catch (err) {
     // silent — job list is non-critical
   }
