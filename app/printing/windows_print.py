@@ -3,7 +3,7 @@ import math
 import time
 from pathlib import Path
 
-from .base import MediaInfo, OptionChoice, PrintBackend, PrinterInfo, PrinterOption, PrintError
+from .base import MediaInfo, OptionChoice, PrintBackend, PrinterInfo, PrinterOption, PrinterStatus, PrintError
 from ..i18n import t
 from . import media_constraints
 from .convert import to_pdf
@@ -65,6 +65,15 @@ DUPLEX_CHOICES = {
     "simplex": DMDUP_SIMPLEX,
     "duplex_long": DMDUP_VERTICAL,
     "duplex_short": DMDUP_HORIZONTAL,
+}
+
+# Win32_Printer.PrinterStatus (Microsoft WMI docs) -- present regardless of
+# driver, unlike ink levels.
+_PRINTER_STATUS = {3: "idle", 4: "printing", 5: "printing", 6: "stopped", 7: "offline"}
+# Win32_Printer.DetectedErrorState
+_ERROR_STATE = {
+    3: "low-paper", 4: "media-empty", 5: "toner-low", 6: "toner-empty",
+    7: "cover-open", 8: "media-jam", 9: "service-requested", 10: "output-full", 11: "media-problem",
 }
 
 
@@ -416,6 +425,32 @@ class WindowsPrintBackend(PrintBackend):
             raise
         except Exception as exc:
             raise PrintError(t("err.test_page", error=exc)) from exc
+        finally:
+            pythoncom.CoUninitialize()
+
+    @staticmethod
+    def printer_status(printer_name: str) -> PrinterStatus | None:
+        """Live status via WMI Win32_Printer (PrinterStatus/DetectedErrorState/
+        WorkOffline) -- standard properties present regardless of the driver,
+        unlike ink levels (see supply_levels, not implemented for lack of a
+        generic WMI equivalent)."""
+        import pythoncom
+        import win32com.client
+
+        pythoncom.CoInitialize()
+        try:
+            wmi = win32com.client.GetObject(r"winmgmts:\\.\root\cimv2")
+            wql_name = printer_name.replace("\\", "\\\\").replace("'", "\\'")
+            printers = list(wmi.ExecQuery(f"SELECT * FROM Win32_Printer WHERE Name = '{wql_name}'"))
+            if not printers:
+                return None
+            p = printers[0]
+            state = "offline" if getattr(p, "WorkOffline", False) else _PRINTER_STATUS.get(p.PrinterStatus, "unknown")
+            reason = _ERROR_STATE.get(getattr(p, "DetectedErrorState", None))
+            return PrinterStatus(state=state, reasons=[reason] if reason else [], accepting_jobs=state != "offline")
+        except Exception:
+            logger.exception("WMI printer_status failed for %r", printer_name)
+            return None
         finally:
             pythoncom.CoUninitialize()
 

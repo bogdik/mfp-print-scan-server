@@ -45,6 +45,12 @@
             <select id="printer-select" name="printer"></select>
           </div>
 
+          <div id="printer-status" class="printer-status" hidden>
+            <span id="printer-status-badge" class="status-badge"></span>
+            <span id="printer-status-reasons" class="printer-status-reasons"></span>
+          </div>
+          <div id="printer-supplies" class="printer-supplies"></div>
+
           <div class="form-row">
             <label for="copies-input">{{ t('web.copies') }}</label>
             <input type="number" id="copies-input" name="copies" value="1" min="1" max="99" />

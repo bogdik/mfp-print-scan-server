@@ -38,6 +38,21 @@ class PreviewOut(BaseModel):
     exact_layout: bool = False  # False = printer geometry unknown, A4 assumed
 
 
+class SupplyLevelOut(BaseModel):
+    name: str
+    percent: int | None
+    kind: str
+
+
+class PrinterStatusOut(BaseModel):
+    state: str  # "idle" | "printing" | "stopped" | "offline" | "unknown"
+    state_label: str
+    reasons: list[str]  # raw keywords, e.g. "media-empty"
+    reason_labels: list[str]  # translated, same order
+    accepting_jobs: bool
+    supplies: list[SupplyLevelOut] = []
+
+
 class JobOut(BaseModel):
     id: str
     filename: str

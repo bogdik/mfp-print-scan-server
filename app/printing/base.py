@@ -40,6 +40,22 @@ class PrinterOption:
 
 
 @dataclass
+class PrinterStatus:
+    """Live status, not the driver's static capabilities."""
+
+    state: str  # "idle" | "printing" | "stopped" | "offline" | "unknown"
+    reasons: list[str]  # e.g. ["media-empty", "cover-open"]; empty = nothing wrong
+    accepting_jobs: bool = True
+
+
+@dataclass
+class SupplyLevel:
+    name: str  # e.g. "Black", "Cyan ink", "Toner"
+    percent: int | None  # 0-100, or None if the driver reports it as unknown
+    kind: str = "ink"  # "ink" | "toner"
+
+
+@dataclass
 class MediaInfo:
     """A paper size as the driver knows it: `name` is the same value
     list_options() uses for paper_size; dimensions and hardware margins in mm."""
@@ -101,4 +117,13 @@ class PrintBackend(ABC):
     def page_layout(self, printer_name: str | None, options: dict[str, str]) -> PageLayout | None:
         """Real paper and printable-area geometry for these options, used by
         the preview. None = unknown, the preview falls back to A4."""
+        return None
+
+    def printer_status(self, printer_name: str) -> PrinterStatus | None:
+        """Live idle/printing/error status. None = the backend can't report it."""
+        return None
+
+    def supply_levels(self, printer_name: str) -> list[SupplyLevel] | None:
+        """Ink/toner levels. None = unavailable (not the same as an empty
+        list, which would mean the printer reports having no supplies)."""
         return None

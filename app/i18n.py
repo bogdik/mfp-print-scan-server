@@ -53,6 +53,14 @@ def t(key: str, **params) -> str:
     return text.format(**params) if params else text
 
 
+def has(key: str) -> bool:
+    """Whether `key` has a translation — for text built from data that isn't
+    a fixed set (e.g. a printer status-reason keyword the OS reports), where
+    an untranslated one should fall back to something readable instead of
+    the raw key."""
+    return key in MESSAGES
+
+
 def js_messages() -> dict[str, str]:
     lang = current_lang.get()
     return {k[4:]: v.get(lang) or v["en"] for k, v in MESSAGES.items() if k.startswith("web.")}
@@ -221,6 +229,23 @@ MESSAGES: dict[str, dict[str, str]] = {
         "ru": "Запустить очистку печатающей головки? Это расходует чернила, принтер будет занят около минуты.",
         "en": "Start print head cleaning? It uses ink and keeps the printer busy for about a minute.",
     },
+
+    # --- Printer status -------------------------------------------------------
+    "status.idle": {"ru": "Готов", "en": "Idle"},
+    "status.printing": {"ru": "Печатает", "en": "Printing"},
+    "status.stopped": {"ru": "Остановлен", "en": "Stopped"},
+    "status.offline": {"ru": "Не в сети", "en": "Offline"},
+    "status.unknown": {"ru": "Статус неизвестен", "en": "Status unknown"},
+    "status.reason.media-empty": {"ru": "нет бумаги", "en": "no paper"},
+    "status.reason.low-paper": {"ru": "мало бумаги", "en": "low paper"},
+    "status.reason.cover-open": {"ru": "открыта крышка", "en": "cover open"},
+    "status.reason.media-jam": {"ru": "замятие бумаги", "en": "paper jam"},
+    "status.reason.toner-empty": {"ru": "нет чернил/тонера", "en": "out of ink/toner"},
+    "status.reason.toner-low": {"ru": "мало чернил/тонера", "en": "low ink/toner"},
+    "status.reason.output-full": {"ru": "лоток приёма заполнен", "en": "output tray full"},
+    "status.reason.media-problem": {"ru": "проблема с бумагой", "en": "media problem"},
+    "status.reason.service-requested": {"ru": "требуется обслуживание", "en": "service requested"},
+    "status.reason.paused": {"ru": "приостановлен", "en": "paused"},
 
     # --- Server errors & notes ---------------------------------------------------
     "err.bad_options": {"ru": "Некорректный формат параметров печати", "en": "Invalid print options format"},

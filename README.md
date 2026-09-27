@@ -71,6 +71,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 - **Documents and text** (`.txt`, `.rtf`, `.docx`, `.odt`, `.xlsx`, `.pptx`, …): with [LibreOffice](https://www.libreoffice.org/) installed on the server they're converted to PDF and then printed and previewed exactly like a PDF, on Windows and Linux. Non-UTF-8 text files (e.g. Windows-1251) are re-encoded first, so Cyrillic isn't garbled. Without LibreOffice they're handed to the program registered to print them (Notepad, Word/WordPad, …) and there's no preview.
 - **Paper type ↔ size rules**: some printers reject certain combinations, e.g. glossy photo paper in 13×18 on a Canon (error 4102). The server swaps in a compatible paper type and records a note on the job. The UI does the same as you pick options.
 - **Job history**: status, settings and notes. Stored in a JSON file, so it survives restarts. Delete single entries or clear it all; uploaded files are removed with their entries.
+- **Live printer status** next to the printer picker: idle/printing/stopped/offline, plus the reason when there is one (out of paper, cover open, jammed, ...), read from the OS (IPP on Linux, WMI on Windows) — not guessed. **Ink/toner levels** too, shown as a small bar per color, when the driver reports them (many CUPS drivers do via IPP marker levels; not currently for a USB-only Canon on the generic driver this project itself uses — see [Known limitations](#known-limitations)).
 
 ### Network printer (IPP Everywhere)
 - The server is an IPP/2.0 printer on port 631 (`ipp://<host>:631/ipp/print`).
@@ -112,6 +113,8 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 | Windows client with "Microsoft IPP Class Driver" | ⚠️ implemented per spec, not yet confirmed on a real client |
 | Bonjour/mDNS advertisement (`zeroconf`) | ⚠️ TXT record verified correct with `avahi-browse` against a stand-in printer object on Linux; not yet run for real on Windows, and no macOS/iOS/Android device has tried discovering it |
 | HTTPS for the web UI (`ssl_certfile`/`ssl_keyfile`) | ✅ tested on Linux: serves TLS only on the web port, falls back to plain HTTP cleanly if only one of the two is set |
+| Live printer status (Linux, via CUPS's own IPP) | ✅ tested against the real MG2500: correctly reports idle, and stopped+"paused" for a disabled queue; ink levels are unavailable for this printer's driver (expected, not a bug — see Known limitations) |
+| Live printer status (Windows, via WMI) | ⚠️ written against documented `Win32_Printer` fields, not yet run on a real Windows machine |
 | AirScan/eSCL server (Linux, real Canon PIXMA MG2500) | ✅ ScannerCapabilities/ScannerStatus/ScanJobs/NextDocument all tested against real hardware: correct bed size and formats reported, a real scan came back as PDF and as grayscale JPEG with the requested region cropped correctly (verified pixel size and content); mDNS advertisement seen by `avahi-browse` **and independently picked up by SANE's own `escl`/`airscan` client backends** on the same machine, with a matching UUID. That self-discovery also surfaced and let us fix a real bug: it made `scanimage -L` ~12x slower and occasionally hit a transient "device busy" — see "A Linux quirk this surfaced" in [How it works](#how-it-works) |
 | AirScan/eSCL server (Windows) | ⚠️ not yet run on a real Windows machine |
 | AirScan/eSCL discovery from a real macOS/iOS/Android device | ⚠️ not yet tried — only verified via `avahi-browse` and SANE's own eSCL client, not Apple's/Google's actual client software |
@@ -447,6 +450,8 @@ Other formats go through the `printto` shell verb. In that case the options are 
 
 **Why not just use the driver's settings?** Drivers expose options through `DeviceCapabilities`, but not the rules between them. The Canon driver happily accepts "envelope + A4" through every API (`DocumentProperties`, PrintTicket validation) and only its own dialog forbids it. Such rules live in `app/printing/media_constraints.py` as data per printer model.
 
+**Printer status on Linux** is read by having the server talk IPP to CUPS's *own* IPP server on `localhost:631` — the same protocol this project already speaks as a server on Windows, so `app/ipp/protocol.py`'s encode/decode functions are reused as a tiny client instead of writing a second IPP implementation (or adding `pycups`, which needs the CUPS C headers at install time, or parsing `lpstat`'s locale-dependent text). `printer-state`/`printer-state-reasons`/`marker-levels` are IPP keyword/enum attributes, so they come back in English regardless of the system's language.
+
 **IPP.** `app/ipp/protocol.py` is a small RFC 8010 encoder/decoder. `app/ipp/printer.py` implements:
 - the operations: Get-Printer-Attributes, Validate-Job, Print-Job, Create-Job/Send-Document, Get-Job-Attributes, Get-Jobs, Cancel-Job, Close-Job;
 - capability mapping from the driver to IPP (PWG media names, `media-col-database` with real margins).
@@ -516,6 +521,7 @@ The UI is a thin client over a JSON API; interactive docs are at `http://<server
 | GET | `/api/printers` | printers known to the OS |
 | GET | `/api/printers/{name}/options` | options from the driver (+ paper type ↔ size rules) |
 | GET | `/api/printers/{name}/maintenance` | available maintenance actions |
+| GET | `/api/printers/{name}/status` | live status (idle/printing/stopped/offline + reasons) and ink/toner levels, or `null` if the backend can't report them |
 | POST | `/api/printers/{name}/maintenance/{action}` | run `test_page`, `nozzle_check`, `head_cleaning` |
 | POST | `/api/print` | multipart: `file`, `printer`, `copies`, `options` (JSON object of option keys → values) |
 | POST | `/api/preview` | multipart: `file`, `printer`, `options` → PNG pages as data URLs |
@@ -672,6 +678,7 @@ Stack:
 - **No OCR** for scans.
 - **Documents without LibreOffice** are printed by whatever program is registered for them, with no preview; install LibreOffice for exact results.
 - **Duplex**: the MG2500 driver reports duplex, but the printer has no automatic duplexer, so the driver does manual duplex.
+- **Ink/toner levels aren't universal.** They come from the driver (IPP marker levels on Linux; nothing generic on Windows yet), so a USB inkjet on a generic driver — like this project's own Canon MG2500 — won't show them, while many laser printers and network-aware drivers will. The status itself (idle/printing/error) is separate and works regardless.
 
 ## License
 

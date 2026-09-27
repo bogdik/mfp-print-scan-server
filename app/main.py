@@ -21,10 +21,12 @@ from .config import settings
 from .escl.mdns import EsclMdnsAnnouncer
 from .escl.server import EsclScanner
 from .escl_routes import create_router as create_escl_router
-from .i18n import COOKIE as LANG_COOKIE, LANGS, current_lang, js_messages, pick_lang, t
+from .i18n import COOKIE as LANG_COOKIE, LANGS, current_lang, has as i18n_has, js_messages, pick_lang, t
 from .ipp.mdns import MdnsAnnouncer
 from .ipp.printer import IppPrinter, is_supported as ipp_supported
-from .models import JobOut, JobStatus, OptionChoiceOut, PreviewOut, PrinterOptionOut, PrinterOut
+from .models import (
+    JobOut, JobStatus, OptionChoiceOut, PreviewOut, PrinterOptionOut, PrinterOut, PrinterStatusOut, SupplyLevelOut,
+)
 from .preview import PreviewUnavailable, render_preview
 from .scan_routes import create_router as create_scan_router
 from .scanning.factory import get_scan_backend
@@ -251,6 +253,26 @@ def list_printer_options(printer_name: str):
         )
         for o in options
     ]
+
+
+@app.get("/api/printers/{printer_name}/status", response_model=PrinterStatusOut | None)
+async def printer_status(printer_name: str):
+    """Live idle/printing/error status and ink/toner levels, when the
+    backend can report them (see PrintBackend.printer_status/supply_levels).
+    None (not an error) if the backend has nothing to say for this printer."""
+    status = await run_in_threadpool(backend.printer_status, printer_name)
+    if status is None:
+        return None
+    supplies = await run_in_threadpool(backend.supply_levels, printer_name)
+    return PrinterStatusOut(
+        state=status.state,
+        state_label=t(f"status.{status.state}"),
+        reasons=status.reasons,
+        reason_labels=[t(f"status.reason.{r}") if i18n_has(f"status.reason.{r}") else r.replace("-", " ")
+                       for r in status.reasons],
+        accepting_jobs=status.accepting_jobs,
+        supplies=[SupplyLevelOut(name=s.name, percent=s.percent, kind=s.kind) for s in (supplies or [])],
+    )
 
 
 def _parse_options(options: Optional[str]) -> dict[str, str]:

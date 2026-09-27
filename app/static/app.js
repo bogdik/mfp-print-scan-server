@@ -227,6 +227,7 @@ async function loadPrinterOptions() {
   }
   schedulePreview();
   loadMaintenance();
+  loadPrinterStatus();
 }
 
 // --- Option limits (e.g. which paper sizes a media type allows) -----------
@@ -283,6 +284,56 @@ printerOptionsContainer.addEventListener("change", (e) => {
 
 const maintenanceBox = document.getElementById("maintenance");
 const maintenanceActions = document.getElementById("maintenance-actions");
+const printerStatusBox = document.getElementById("printer-status");
+const printerStatusBadge = document.getElementById("printer-status-badge");
+const printerStatusReasons = document.getElementById("printer-status-reasons");
+const printerSupplies = document.getElementById("printer-supplies");
+
+// --- Printer status (idle/printing/error, ink/toner levels) --------------
+// Best-effort: not every OS/driver combination can report this (see
+// PrintBackend.printer_status/supply_levels) — the box just stays hidden.
+
+async function loadPrinterStatus() {
+  const printer = printerSelect.value;
+  if (!printer) {
+    printerStatusBox.hidden = true;
+    printerSupplies.innerHTML = "";
+    return;
+  }
+  try {
+    const res = await fetch(`/api/printers/${encodeURIComponent(printer)}/status`);
+    if (!res.ok) throw new Error();
+    const status = await res.json();
+    if (printer !== printerSelect.value) return; // printer changed meanwhile
+    if (!status) {
+      printerStatusBox.hidden = true;
+      printerSupplies.innerHTML = "";
+      return;
+    }
+    printerStatusBadge.textContent = status.state_label;
+    printerStatusBadge.className = `status-badge status-${status.state}`;
+    printerStatusReasons.textContent = status.reason_labels.length ? `(${status.reason_labels.join(", ")})` : "";
+    printerStatusBox.hidden = false;
+    printerSupplies.innerHTML = status.supplies
+      .map((s) => {
+        const pct = s.percent;
+        if (pct == null) {
+          // Level unknown — no bar rather than a misleading "full" one.
+          return `<span class="supply">${escapeHtml(s.name)}</span>`;
+        }
+        const width = Math.max(0, Math.min(100, pct));
+        const level = pct <= 10 ? "empty" : pct <= 25 ? "low" : "";
+        return `<span class="supply" title="${escapeHtml(s.name)} ${pct}%">
+          <span class="supply-bar"><span class="supply-bar-fill ${level}" style="width:${width}%"></span></span>
+          ${escapeHtml(s.name)}
+        </span>`;
+      })
+      .join("");
+  } catch (err) {
+    printerStatusBox.hidden = true;
+    printerSupplies.innerHTML = "";
+  }
+}
 
 async function loadMaintenance() {
   maintenanceBox.hidden = true;
@@ -327,6 +378,7 @@ maintenanceActions.addEventListener("click", async (e) => {
   } finally {
     button.disabled = false;
     loadJobs();
+    loadPrinterStatus();
   }
 });
 
@@ -520,6 +572,7 @@ form.addEventListener("submit", async (e) => {
   } finally {
     updateDropzoneLabel();
     loadJobs();
+    loadPrinterStatus();
   }
 });
 
@@ -542,3 +595,4 @@ document.getElementById("clear-jobs").addEventListener("click", async () => {
 loadPrinters();
 loadJobs();
 setInterval(loadJobs, 5000);
+setInterval(loadPrinterStatus, 15000);

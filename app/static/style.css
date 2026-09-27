@@ -766,3 +766,78 @@ input[type="number"] {
   background: rgba(224, 169, 48, 0.15);
   color: var(--warning);
 }
+
+.printer-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -6px 0 14px;
+}
+
+.printer-status-reasons {
+  font-size: 0.82rem;
+  color: var(--warning);
+}
+
+.status-idle {
+  background: rgba(51, 196, 129, 0.15);
+  color: var(--success);
+}
+
+.status-printing {
+  background: rgba(79, 140, 255, 0.15);
+  color: var(--accent);
+}
+
+.status-stopped,
+.status-offline {
+  background: rgba(224, 169, 48, 0.15);
+  color: var(--warning);
+}
+
+.status-unknown {
+  background: rgba(154, 161, 172, 0.15);
+  color: var(--text-dim);
+}
+
+.printer-supplies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0 0 14px;
+}
+
+.printer-supplies:empty {
+  margin: 0;
+}
+
+.supply {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.supply-bar {
+  width: 48px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.supply-bar-fill {
+  height: 100%;
+  background: var(--success);
+}
+
+.supply-bar-fill.low {
+  background: var(--warning);
+}
+
+.supply-bar-fill.empty {
+  background: var(--danger);
+}

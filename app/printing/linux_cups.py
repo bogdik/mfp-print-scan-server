@@ -1,13 +1,43 @@
+import http.client
 import re
 import subprocess
+import time
 from pathlib import Path
 
 from ..i18n import t
-from .base import OptionChoice, PrintBackend, PrinterInfo, PrinterOption, PrintError
+from ..ipp import protocol as ipp
+from .base import OptionChoice, PrintBackend, PrinterInfo, PrinterOption, PrintError, PrinterStatus, SupplyLevel
 from .convert import to_pdf
 from .maintenance import TEST_PAGE, MaintenanceAction, actions_for, raw_command
 
 CUPS_TEST_PAGE = Path("/usr/share/cups/data/testprint")
+
+# IPP printer-state (RFC 8011 section 5.4.12).
+IPP_STATE = {3: "idle", 4: "printing", 5: "stopped"}
+
+
+def _cups_ipp_query(printer_name: str, requested: list[str]) -> dict[str, list]:
+    """Queries CUPS's own IPP server (always on localhost:631, CUPS being a
+    requirement already) for the given printer attributes — reusing our own
+    IPP codec (app/ipp/protocol.py; the wire format is symmetric, so the
+    same encode/decode functions work for either direction) instead of a
+    new dependency (pycups) or parsing `lpstat`'s locale-dependent text."""
+    request_id = int(time.time()) & 0x7FFFFFFF
+    groups = [(ipp.TAG_OPERATION, [
+        ipp.Attr(ipp.TAG_CHARSET, "attributes-charset", ["utf-8"]),
+        ipp.Attr(ipp.TAG_LANGUAGE, "attributes-natural-language", ["en"]),
+        ipp.Attr(ipp.TAG_URI, "printer-uri", [f"ipp://localhost/printers/{printer_name}"]),
+        ipp.Attr(ipp.TAG_KEYWORD, "requested-attributes", requested),
+    ])]
+    body = ipp.encode_response((2, 0), ipp.OP_GET_PRINTER_ATTRIBUTES, request_id, groups)
+    conn = http.client.HTTPConnection("localhost", 631, timeout=5)
+    try:
+        conn.request("POST", f"/printers/{printer_name}", body=body, headers={"Content-Type": "application/ipp"})
+        data = conn.getresponse().read()
+    finally:
+        conn.close()
+    parsed = ipp.decode_request(data)
+    return {name: attr.values for name, attr in parsed.group(ipp.TAG_PRINTER).items()}
 
 # PPD options that duplicate another option or aren't meaningful per-job —
 # hidden from the UI. Everything else the driver reports (PageSize,
@@ -152,3 +182,35 @@ class CupsPrintBackend(PrintBackend):
             raise PrintError(t("err.cups_missing", cmd="lp")) from exc
         if result.returncode != 0:
             raise PrintError(result.stderr.decode(errors="replace").strip() or t("err.cmd_failed", cmd="lp"))
+
+    def printer_status(self, printer_name: str) -> PrinterStatus | None:
+        try:
+            attrs = _cups_ipp_query(
+                printer_name, ["printer-state", "printer-state-reasons", "printer-is-accepting-jobs"]
+            )
+        except (OSError, ipp.IppError):
+            return None
+        state = IPP_STATE.get((attrs.get("printer-state") or [None])[0], "unknown")
+        reasons = [r for r in (attrs.get("printer-state-reasons") or []) if r != "none"]
+        accepting = (attrs.get("printer-is-accepting-jobs") or [True])[0]
+        return PrinterStatus(state=state, reasons=reasons, accepting_jobs=bool(accepting))
+
+    def supply_levels(self, printer_name: str) -> list[SupplyLevel] | None:
+        """Many CUPS drivers (HPLIP, some manufacturer PPDs) report ink/toner
+        levels as IPP marker-* attributes; the Gutenprint/generic-USB setup
+        this project's own Canon MG2500 uses doesn't, so this returns None
+        for it — but it works out of the box for printers whose driver does
+        populate these, no code changes needed."""
+        try:
+            attrs = _cups_ipp_query(printer_name, ["marker-names", "marker-levels", "marker-types"])
+        except (OSError, ipp.IppError):
+            return None
+        names, levels, types = (attrs.get(k) or [] for k in ("marker-names", "marker-levels", "marker-types"))
+        if not names or not levels:
+            return None
+        supplies = []
+        for i, name in enumerate(names):
+            level = levels[i] if i < len(levels) else None
+            kind = "toner" if i < len(types) and "toner" in types[i] else "ink"
+            supplies.append(SupplyLevel(name=name, percent=level if level is not None and level >= 0 else None, kind=kind))
+        return supplies
