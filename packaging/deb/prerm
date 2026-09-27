@@ -1,0 +1,12 @@
+#!/bin/sh
+# Pre-removal script for mfp-print-scan-server.
+set -e
+
+case "$1" in
+    remove|purge)
+        systemctl stop mfp-print-scan-server 2>/dev/null || true
+        systemctl disable mfp-print-scan-server 2>/dev/null || true
+        ;;
+esac
+
+exit 0

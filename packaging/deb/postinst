@@ -1,0 +1,40 @@
+#!/bin/sh
+# Post-installation script for mfp-print-scan-server.
+set -e
+
+PREFIX=/opt/mfp-print-scan-server
+
+case "$1" in
+    configure)
+        if ! getent group mfp >/dev/null; then
+            addgroup --system mfp
+        fi
+        if ! getent passwd mfp >/dev/null; then
+            adduser --system --ingroup mfp --home "$PREFIX" --no-create-home \
+                --shell /usr/sbin/nologin --disabled-password --gecos "MFP Print & Scan Server" mfp
+        fi
+        # Access to the printer/scanner device — skip a group this system doesn't have
+        # (see deploy/mfp-print-scan-server.service for the same note).
+        for grp in lp scanner; do
+            if getent group "$grp" >/dev/null; then
+                usermod -aG "$grp" mfp
+            fi
+        done
+
+        mkdir -p "$PREFIX/data" "$PREFIX/scans" "$PREFIX/uploads" "$PREFIX/logs"
+        chown -R mfp:mfp "$PREFIX"
+
+        echo "Setting up the Python environment (needs internet access, first install only) ..."
+        su -s /bin/sh mfp -c "$PREFIX/start.sh --setup-only"
+
+        systemctl daemon-reload || true
+        systemctl enable --now mfp-print-scan-server || true
+
+        echo ""
+        echo "MFP Print & Scan Server: http://localhost:8000"
+        echo "Configuration: $PREFIX/config.ini (created from config.example.ini on first run)"
+        echo "Logs: journalctl -u mfp-print-scan-server -f"
+        ;;
+esac
+
+exit 0

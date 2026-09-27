@@ -1,0 +1,20 @@
+Package: mfp-print-scan-server
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: all
+Maintainer: bogdik <noreply@example.com>
+Depends: python3 (>= 3.10), python3-venv, python3-pip, cups, cups-client
+Recommends: sane-utils
+Homepage: https://github.com/bogdik/mfp-print-scan-server
+Description: Turn a USB printer/scanner into a network device
+ A self-hosted web server that gives a USB printer and/or scanner a
+ web UI, an IPP network-printer endpoint, and AirScan/eSCL network
+ scanning, so any device on the LAN can print and scan without
+ installing drivers.
+ .
+ Installs to /opt/mfp-print-scan-server (own Python virtual
+ environment, dependencies fetched from PyPI on first install — this
+ needs internet access once) and runs as a systemd service under a
+ dedicated "mfp" user. Configuration lives in
+ /opt/mfp-print-scan-server/config.ini.

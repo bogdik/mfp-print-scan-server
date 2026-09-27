@@ -7,3 +7,4 @@ scans/
 data/
 logs/
 config.ini
+dist/

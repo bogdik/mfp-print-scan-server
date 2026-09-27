@@ -1,0 +1,31 @@
+[Unit]
+Description=MFP Print & Scan Server (web printing and scanning)
+Documentation=https://github.com/bogdik/mfp-print-scan-server
+# Printing goes through CUPS; start after it and after the network is up.
+After=network-online.target cups.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mfp
+Group=mfp
+SupplementaryGroups=lp scanner
+
+WorkingDirectory=/opt/mfp-print-scan-server
+ExecStart=/opt/mfp-print-scan-server/.venv/bin/python /opt/mfp-print-scan-server/run.py
+
+# Settings (language, port, sign-in, users...) live in
+# /opt/mfp-print-scan-server/config.ini — see README, "Configuration".
+# Environment variables override it, e.g.:
+#Environment=MFP_PORT=8080
+
+Restart=on-failure
+RestartSec=5
+
+# Light hardening: the app only writes to its own folder (data/, scans/, uploads/).
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

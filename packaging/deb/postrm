@@ -1,0 +1,31 @@
+#!/bin/sh
+# Post-removal script for mfp-print-scan-server.
+set -e
+
+PREFIX=/opt/mfp-print-scan-server
+
+case "$1" in
+    purge)
+        systemctl daemon-reload 2>/dev/null || true
+
+        # The venv is just installed dependencies (fetched from PyPI at
+        # install time) — safe to drop. config.ini, data/, scans/ and
+        # uploads/ are the user's own settings and print/scan history: never
+        # deleted automatically, only mentioned so they can be removed by hand.
+        rm -rf "$PREFIX/.venv" "$PREFIX/logs"
+
+        if getent passwd mfp >/dev/null; then
+            deluser mfp >/dev/null 2>&1 || true
+        fi
+        if getent group mfp >/dev/null; then
+            delgroup mfp >/dev/null 2>&1 || true
+        fi
+
+        if [ -d "$PREFIX" ] && [ -n "$(ls -A "$PREFIX" 2>/dev/null)" ]; then
+            echo "mfp-print-scan-server removed. Your config and history are still in $PREFIX"
+            echo "(config.ini, data/, scans/, uploads/) — delete that folder by hand if you don't need them."
+        fi
+        ;;
+esac
+
+exit 0

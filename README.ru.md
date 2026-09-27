@@ -49,6 +49,7 @@
 - [Решение проблем](#решение-проблем)
 - [Расширение](#расширение)
 - [Разработка](#разработка)
+- [Сборка инсталляторов](#сборка-инсталляторов)
 - [Известные ограничения](#известные-ограничения)
 - [Лицензия](#лицензия)
 
@@ -706,6 +707,25 @@ python run.py
 Стек:
 - **сервер**: FastAPI, uvicorn, pywin32, pypdfium2, Pillow, zeroconf, qrcode;
 - **интерфейс**: обычные HTML/CSS/JS без сборки.
+
+## Сборка инсталляторов
+
+В `packaging/` — настоящий инсталлятор для каждой ОС, а не «склонируйте репозиторий и запустите скрипт»:
+
+| ОС | Скрипт | Нужно | Результат |
+|---|---|---|---|
+| Debian/Ubuntu | `packaging/deb/build.sh` | `dpkg-dev` (`sudo apt install dpkg-dev`) | `dist/mfp-print-scan-server_<версия>_all.deb` |
+| Fedora/RHEL/openSUSE | `packaging/rpm/build.sh` | `rpm-build` (`sudo dnf install rpm-build`) | `dist/mfp-print-scan-server-<версия>-1.noarch.rpm` |
+| Windows | `packaging/windows/mfp-print-scan-server.iss` | [Inno Setup 6](https://jrsoftware.org/isinfo.php) | `dist/mfp-print-scan-server-setup-<версия>.exe` |
+
+Все три берут версию из файла `VERSION` в корне репозитория — перед сборкой релиза обновите его. Оба `.sh`-скрипта запускаются из корня репозитория (`bash packaging/deb/build.sh`); Windows-скрипт компилируется через `ISCC.exe packaging\windows\mfp-print-scan-server.iss` (или Файл → Открыть → Compile в IDE Inno Setup).
+
+Ни один из трёх не тащит с собой Python или зависимости — `pip install` пакетов из `requirements.txt` в собственный `.venv` приложения всё так же происходит на *целевой* машине при первой установке (один раз нужен интернет), точно как уже делают `start.sh`/`start.ps1`. Что инсталляторы добавляют сверху:
+
+- **`.deb`/`.rpm`**: ставят в `/opt/mfp-print-scan-server`, создают отдельного системного пользователя `mfp` (в группах `lp`/`scanner` для доступа к устройству), устанавливают и включают systemd-сервис из [`deploy/mfp-print-scan-server.service`](deploy/mfp-print-scan-server.service) и запускают его — `sudo apt install ./mfp-print-scan-server_*.deb` или `sudo dnf install ./mfp-print-scan-server-*.rpm` и всё готово. Удаление пакета (`apt remove`/`dnf remove`) останавливает сервис, но оставляет `config.ini`, `data/`, `scans/` и `uploads/` на месте; только `apt purge`/полное удаление пакета убирает ещё и venv с пользователем `mfp`, но данные — никогда, см. комментарии в `packaging/deb/postrm` / `%postun` спека.
+- **Windows `.exe`**: ставит на пользователя (`%LocalAppData%\MFP Print & Scan Server` — фоновая задача работает от имени вошедшего пользователя, а не SYSTEM, поэтому ей нужно писать туда без прав администратора при каждом запуске), затем неинтерактивно запускает уже существующий `scripts\register_service.ps1` (Task Scheduler + правила брандмауэра). Удаление сначала запускает `scripts\unregister_service.ps1`, потом убирает файлы приложения и `.venv`; `config.ini`, `data\`, `scans\` и `uploads\` остаются точно так же. Перед установкой проверяется наличие Python, и если его нет — указывает на python.org: сам Python по-прежнему не встроен, как и в разделе «Windows» из [Быстрого старта](#быстрый-старт).
+
+Windows-инсталлятор написан по документированному поведению Inno Setup 6, но ещё ни разу не скомпилирован и не запущен по-настоящему — в среде, где он писался, нет ни Windows, ни установленного Inno Setup. Считайте его добротным черновиком, который нужно собрать и проверить, а не подтверждённым результатом.
 
 ## Известные ограничения
 
