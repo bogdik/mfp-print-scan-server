@@ -100,7 +100,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "web.quota_status": {"ru": "{used}/{limit} листов в этом месяце", "en": "{used}/{limit} sheets this month"},
     "web.quota_button": {"ru": "⚙ Квоты", "en": "⚙ Quotas"},
     "web.quota_user_col": {"ru": "Пользователь", "en": "User"},
-    "web.quota_limit_col": {"ru": "Лимит, листов/мес", "en": "Limit, sheets/mo"},
+    "web.quota_limit_col": {"ru": "Лимит/мес", "en": "Limit/mo"},
     "web.quota_used_col": {"ru": "Использовано", "en": "Used"},
     "web.quota_unlimited_placeholder": {"ru": "без лимита", "en": "unlimited"},
     "web.quota_save": {"ru": "Сохранить", "en": "Save"},

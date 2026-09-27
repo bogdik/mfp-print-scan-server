@@ -284,12 +284,12 @@ body {
 }
 
 .header-tools {
-  position: absolute;
-  top: 0;
-  right: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
+  margin-bottom: 12px;
 }
 
 .user-box {
@@ -383,9 +383,7 @@ body {
 
 @media (max-width: 520px) {
   .header-tools {
-    position: static;
     justify-content: center;
-    margin-bottom: 12px;
   }
 
   .qr-panel {
@@ -506,15 +504,28 @@ body {
 }
 
 .quotas-panel {
-  width: 340px;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  overflow-x: auto;
 }
 
 .quotas-table {
   width: 100%;
 }
 
-.quota-limit-input {
-  width: 70px;
+.quotas-table th,
+.quotas-table td {
+  padding-right: 6px;
+}
+
+.quotas-table .ghost-button {
+  padding: 4px 8px;
+  font-size: 0.78rem;
+}
+
+input[type="number"].quota-limit-input {
+  width: 52px;
+  min-width: 0;
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
@@ -726,8 +737,10 @@ input[type="number"] {
 
 .jobs-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 12px;
 }
 
