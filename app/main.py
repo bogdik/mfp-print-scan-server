@@ -28,8 +28,8 @@ from .i18n import COOKIE as LANG_COOKIE, LANGS, current_lang, has as i18n_has, j
 from .ipp.mdns import MdnsAnnouncer
 from .ipp.printer import IppPrinter, is_supported as ipp_supported
 from .models import (
-    JobOut, JobStatus, OptionChoiceOut, PreviewOut, PrinterOptionOut, PrinterOut, PrinterStatusOut, SupplyLevelOut,
-    TokenCreateIn, TokenCreateOut, TokenOut, UsageByKeyOut, UsageOut, UsageTotalsOut,
+    JobOut, JobStatus, OptionChoiceOut, PreviewOut, PrinterOptionOut, PrinterOut, PrinterStatusOut, QuotaOut,
+    QuotaSetIn, SupplyLevelOut, TokenCreateIn, TokenCreateOut, TokenOut, UsageOut,
 )
 from .preview import PreviewUnavailable, render_preview
 from .scan_routes import create_router as create_scan_router
@@ -40,6 +40,7 @@ from .printing.factory import get_backend
 from .printing.layout import DEFAULT_LAYOUT
 from .storage import job_store
 from .tokens import token_store
+from . import quotas, usage
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR.parent / "uploads"
@@ -218,6 +219,15 @@ def _require_user(request: Request) -> str:
     return user
 
 
+def _require_admin(request: Request) -> str:
+    user = _require_user(request)
+    if user not in settings.admins:
+        raise HTTPException(status_code=403, detail=t("err.not_admin"))
+    return user
+
+
+
+
 @app.get("/api/tokens", response_model=list[TokenOut])
 def list_tokens(request: Request):
     return token_store.list_for(_require_user(request))
@@ -235,6 +245,33 @@ def delete_token(token_id: str, request: Request):
     if not token_store.revoke(_require_user(request), token_id):
         raise HTTPException(status_code=404, detail=t("err.token_not_found"))
     return {"deleted": 1}
+
+
+@app.get("/api/quotas/me", response_model=QuotaOut)
+def my_quota(request: Request):
+    user = _require_user(request)
+    return QuotaOut(user=user, limit=quotas.quota_store.get(user), used=usage.sheets_this_month(user))
+
+
+@app.get("/api/quotas", response_model=list[QuotaOut])
+def list_quotas(request: Request):
+    _require_admin(request)
+    limits = quotas.quota_store.all()
+    return [
+        QuotaOut(user=name, limit=limits.get(name), used=usage.sheets_this_month(name))
+        for name in settings.users
+    ]
+
+
+@app.put("/api/quotas/{user}", response_model=QuotaOut)
+def set_quota(user: str, body: QuotaSetIn, request: Request):
+    _require_admin(request)
+    if user not in settings.users:
+        raise HTTPException(status_code=404, detail=t("err.user_not_found"))
+    if body.limit is not None and body.limit < 0:
+        raise HTTPException(status_code=400, detail=t("err.quota_bad_limit"))
+    quotas.quota_store.set(user, body.limit)
+    return QuotaOut(user=user, limit=body.limit, used=usage.sheets_this_month(user))
 
 
 @app.middleware("http")
@@ -255,9 +292,10 @@ async def request_language(request: Request, call_next):
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
+    user = getattr(request.state, "user", None)
     return templates.TemplateResponse(request, "index.html", {
         "lang": current_lang.get(), "langs": LANGS, "messages": js_messages(),
-        "user": getattr(request.state, "user", None),
+        "user": user, "is_admin": user is not None and user in settings.admins,
         "base_url": str(request.base_url),
     })
 
@@ -428,6 +466,14 @@ async def print_file(
     dest = UPLOAD_DIR / safe_name
     await _save_upload(file, dest)
 
+    user = getattr(request.state, "user", None)
+    pages = await run_in_threadpool(page_count, dest)
+    try:
+        quotas.enforce(user, pages, copies)
+    except quotas.QuotaExceeded as exc:
+        dest.unlink(missing_ok=True)  # no job was created — don't leave the upload behind
+        raise HTTPException(status_code=402, detail=str(exc))
+
     job = JobOut(
         id=job_id,
         filename=file.filename,
@@ -437,8 +483,8 @@ async def print_file(
         status=JobStatus.QUEUED,
         error=None,
         created_at=datetime.now(),
-        user=getattr(request.state, "user", None),
-        pages=await run_in_threadpool(page_count, dest),
+        user=user,
+        pages=pages,
     )
     job_store.add(job)
 
@@ -508,40 +554,9 @@ def clear_jobs():
     return {"deleted": len(job_store.clear())}
 
 
-def _sheets(job: JobOut) -> int:
-    """Paper actually used, in sheets; 0 (not None) when pages is unknown, so
-    it can be summed without special-casing — a report that undercounts a
-    few unknown jobs is more useful than one that crashes or lies with a
-    fake page count."""
-    return (job.pages or 0) * job.copies
-
-
-def _usage_by(jobs: list[JobOut], key) -> list[UsageByKeyOut]:
-    totals: dict[str, list[int]] = {}
-    for job in jobs:
-        bucket = totals.setdefault(key(job) or t("usage.unknown"), [0, 0])
-        bucket[0] += 1
-        bucket[1] += _sheets(job)
-    return [
-        UsageByKeyOut(key=k, jobs=v[0], sheets=v[1])
-        for k, v in sorted(totals.items(), key=lambda kv: kv[1][0], reverse=True)
-    ]
-
-
 @app.get("/api/usage", response_model=UsageOut)
 def usage_report():
-    jobs = job_store.list(limit=None)
-    totals = UsageTotalsOut(
-        jobs=len(jobs),
-        sent=sum(1 for j in jobs if j.status == JobStatus.SENT),
-        failed=sum(1 for j in jobs if j.status == JobStatus.FAILED),
-        sheets=sum(_sheets(j) for j in jobs),
-    )
-    return UsageOut(
-        totals=totals,
-        by_user=_usage_by(jobs, lambda j: j.user),
-        by_printer=_usage_by(jobs, lambda j: j.printer),
-    )
+    return usage.report()
 
 
 @app.get("/api/usage.csv")
@@ -553,7 +568,7 @@ def usage_csv():
     for job in jobs:
         writer.writerow([
             job.created_at.isoformat(timespec="seconds"), job.user or "", job.printer or "",
-            job.filename, job.copies, job.pages if job.pages is not None else "", _sheets(job),
+            job.filename, job.copies, job.pages if job.pages is not None else "", usage.sheets(job),
             job.status.value, job.error or "",
         ])
     return StreamingResponse(

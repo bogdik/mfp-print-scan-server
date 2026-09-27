@@ -21,6 +21,7 @@ from pathlib import Path
 from ..config import settings
 from ..i18n import t
 from ..models import JobOut, JobStatus
+from .. import quotas
 from ..printing.base import MediaInfo, PrintBackend, PrintError
 from ..printing.convert import page_count
 from ..storage import job_store
@@ -614,12 +615,17 @@ class IppPrinter:
 
         def run():
             job.state, job.reasons, job.processing = JOB_PROCESSING, "job-printing", time.time()
-            job_store.update(job.web_job_id, pages=page_count(path))
+            pages = page_count(path)
+            job_store.update(job.web_job_id, pages=pages)
             try:
+                quotas.enforce(job.user if job.user != "anonymous" else None, pages, job.copies)
                 # PDF/PWG pages are already the whole sheet with the margins we
                 # advertised; a JPEG is just a picture — fit it to the page.
                 scaling = "fit" if fmt == FORMAT_JPEG else "sheet"
                 note = self.backend.print_file(path, job.printer, job.copies, job.options, scaling)
+            except quotas.QuotaExceeded as exc:
+                logger.info("IPP job %d rejected: %s", job.id, exc)
+                self._finish(job, JOB_ABORTED, "aborted-by-system", str(exc))
             except (PrintError, ValueError) as exc:
                 logger.warning("IPP job %d failed: %s", job.id, exc)
                 self._finish(job, JOB_ABORTED, "aborted-by-system", str(exc))

@@ -1,12 +1,16 @@
 """Server settings from config.ini (next to run.py, or $MFP_CONFIG).
 
-Format — plain `key = value` lines, then a [users] section:
+Format — plain `key = value` lines, then a [users] section and an optional
+[admins] section (names only, no "= value") for who can manage quotas:
 
     defaultlang = en
     auth = none
 
     [users]
     admin = pbkdf2_sha256$...
+
+    [admins]
+    admin
 
 Environment variables (MFP_PORT, MFP_LANG, ...) override the file. If the
 file doesn't exist it's created from config.example.ini on first start.
@@ -52,10 +56,12 @@ class Settings:
     escl_auth: bool = False
     session_days: int = 30
     users: dict[str, str] = field(default_factory=dict)  # name -> password or pbkdf2 hash
+    admins: set[str] = field(default_factory=set)  # subset of users allowed to manage quotas/other users
 
 
 def _read_file() -> configparser.ConfigParser:
-    parser = configparser.ConfigParser(inline_comment_prefixes=(";", "#"), interpolation=None)
+    # allow_no_value: [admins] lists names with no "= value", one per line.
+    parser = configparser.ConfigParser(inline_comment_prefixes=(";", "#"), interpolation=None, allow_no_value=True)
     parser.optionxform = str  # keep user names case-sensitive
     if not CONFIG_PATH.exists() and EXAMPLE_PATH.exists() and "MFP_CONFIG" not in os.environ:
         shutil.copyfile(EXAMPLE_PATH, CONFIG_PATH)
@@ -109,7 +115,11 @@ def load() -> Settings:
         escl_auth=_bool(get("escl_auth", "MFP_ESCL_AUTH", "no")),
         session_days=int(get("session_days", "MFP_SESSION_DAYS", "30")),
         users={name: pw.strip() for name, pw in parser["users"].items()} if parser.has_section("users") else {},
+        admins=set(parser["admins"].keys()) if parser.has_section("admins") else set(),
     )
+    unknown_admins = settings.admins - set(settings.users)
+    if unknown_admins:
+        logger.warning("[admins] in %s lists users not in [users]: %s", CONFIG_PATH.name, ", ".join(unknown_admins))
     if bool(settings.ssl_certfile) != bool(settings.ssl_keyfile):
         logger.error("Both ssl_certfile and ssl_keyfile must be set to enable HTTPS in %s — "
                       "ignoring, serving plain HTTP", CONFIG_PATH.name)

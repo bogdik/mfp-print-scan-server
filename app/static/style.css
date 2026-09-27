@@ -294,6 +294,10 @@ body {
   font-size: 0.85rem;
 }
 
+.quota-status {
+  color: var(--text-dim);
+}
+
 .login-card {
   max-width: 380px;
   margin: 0 auto;
@@ -489,6 +493,24 @@ body {
   display: block;
   word-break: break-all;
   user-select: all;
+}
+
+.quotas-panel {
+  width: 340px;
+}
+
+.quotas-table {
+  width: 100%;
+}
+
+.quota-limit-input {
+  width: 70px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 0.85rem;
 }
 
 .header h1 {

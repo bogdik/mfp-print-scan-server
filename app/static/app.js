@@ -113,6 +113,83 @@ if (tokensToggle) {
   document.getElementById("tokens-close").addEventListener("click", () => (tokensPanel.hidden = true));
 }
 
+const quotaStatus = document.getElementById("quota-status");
+
+async function loadQuotaStatus() {
+  if (!quotaStatus) return;
+  try {
+    const res = await fetch("/api/quotas/me");
+    if (!res.ok) throw new Error(await res.text());
+    const q = await res.json();
+    quotaStatus.textContent = q.limit == null ? "" : ` · ${t("quota_status", { used: q.used, limit: q.limit })}`;
+  } catch (err) {
+    // silent — quota status is non-critical
+  }
+}
+
+loadQuotaStatus();
+
+const quotasToggle = document.getElementById("quotas-toggle");
+if (quotasToggle) {
+  const quotasPanel = document.getElementById("quotas-panel");
+  const quotasList = document.getElementById("quotas-list");
+
+  async function loadQuotas() {
+    try {
+      const res = await fetch("/api/quotas");
+      if (!res.ok) throw new Error(await res.text());
+      const items = await res.json();
+      quotasList.innerHTML = items
+        .map(
+          (q) => `<tr data-quota-user="${escapeHtml(q.user)}">
+            <td>${escapeHtml(q.user)}</td>
+            <td>${q.used}</td>
+            <td><input type="number" min="0" class="quota-limit-input" value="${q.limit == null ? "" : q.limit}"
+                       placeholder="${escapeHtml(t("quota_unlimited_placeholder"))}" /></td>
+            <td><button type="button" class="ghost-button" data-save-quota="${escapeHtml(q.user)}">${t("quota_save")}</button></td>
+          </tr>`
+        )
+        .join("");
+    } catch (err) {
+      // silent — quotas panel is non-critical
+    }
+  }
+
+  quotasList.addEventListener("click", async (e) => {
+    const button = e.target.closest("[data-save-quota]");
+    if (!button) return;
+    const row = button.closest("[data-quota-user]");
+    const input = row.querySelector(".quota-limit-input");
+    const limit = input.value.trim() === "" ? null : Number(input.value);
+    button.disabled = true;
+    try {
+      const res = await fetch(`/api/quotas/${encodeURIComponent(button.dataset.saveQuota)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      button.textContent = t("quota_saved");
+      setTimeout(() => (button.textContent = t("quota_save")), 1500);
+    } catch (err) {
+      // best-effort; the input keeps whatever the admin typed either way
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  qrToggle.addEventListener("click", () => (quotasPanel.hidden = true));
+  if (tokensToggle) tokensToggle.addEventListener("click", () => (quotasPanel.hidden = true));
+  quotasToggle.addEventListener("click", () => {
+    qrPanel.hidden = true;
+    const tokensPanel = document.getElementById("tokens-panel");
+    if (tokensPanel) tokensPanel.hidden = true;
+    quotasPanel.hidden = !quotasPanel.hidden;
+    if (!quotasPanel.hidden) loadQuotas();
+  });
+  document.getElementById("quotas-close").addEventListener("click", () => (quotasPanel.hidden = true));
+}
+
 // --- Cookie helpers (shared with scan.js) -----------------------------------
 // Print/scan settings are remembered per browser for a year, the same way
 // as the language choice above — no server-side storage involved.
@@ -645,6 +722,7 @@ form.addEventListener("submit", async (e) => {
     updateDropzoneLabel();
     loadJobs();
     loadPrinterStatus();
+    loadQuotaStatus();
   }
 });
 

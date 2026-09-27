@@ -12,10 +12,13 @@
       <div class="header-tools">
         {% if user %}
         <form method="post" action="/logout" class="user-box">
-          <span class="user-name">👤 {{ user }}</span>
+          <span class="user-name">👤 {{ user }}<span id="quota-status" class="quota-status"></span></span>
           <button type="submit" class="ghost-button">{{ t('web.logout') }}</button>
         </form>
         <button type="button" id="tokens-toggle" class="ghost-button">🔑 {{ t('web.tokens_button') }}</button>
+        {% if is_admin %}
+        <button type="button" id="quotas-toggle" class="ghost-button">{{ t('web.quota_button') }}</button>
+        {% endif %}
         {% endif %}
         <button type="button" id="qr-toggle" class="ghost-button" title="{{ t('web.qr_hint') }}">📱 {{ t('web.qr_button') }}</button>
         <div class="lang-switch" role="group" aria-label="{{ t('web.language') }}">
@@ -43,6 +46,23 @@
           <code id="tokens-new-value"></code>
         </div>
         <button type="button" id="tokens-close" class="ghost-button">{{ t('web.hide') }}</button>
+      </div>
+      {% endif %}
+      {% if is_admin %}
+      <div id="quotas-panel" class="qr-panel tokens-panel quotas-panel" hidden>
+        <h3>{{ t('web.quota_button') }}</h3>
+        <table class="usage-table quotas-table">
+          <thead>
+            <tr>
+              <th>{{ t('web.quota_user_col') }}</th>
+              <th>{{ t('web.quota_used_col') }}</th>
+              <th>{{ t('web.quota_limit_col') }}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="quotas-list"></tbody>
+        </table>
+        <button type="button" id="quotas-close" class="ghost-button">{{ t('web.hide') }}</button>
       </div>
       {% endif %}
       <h1>🖨️ {{ t('web.title') }}</h1>

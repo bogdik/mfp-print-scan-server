@@ -89,6 +89,16 @@ class TokenCreateOut(BaseModel):
     token: str  # only ever shown once, right after creation
 
 
+class QuotaOut(BaseModel):
+    user: str
+    limit: int | None  # sheets/month; None = unlimited
+    used: int  # sheets sent so far this calendar month
+
+
+class QuotaSetIn(BaseModel):
+    limit: int | None  # None = remove the quota (unlimited)
+
+
 class JobOut(BaseModel):
     id: str
     filename: str

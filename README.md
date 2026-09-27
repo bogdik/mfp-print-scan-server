@@ -96,6 +96,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 
 ### Other
 - Optional **sign-in** (`auth = yes` in `config.ini`): users and passwords (hashed or plain) in the config, remembered sessions, brute-force lockout, HTTP Basic for scripts, optional Basic auth for IPP. **API tokens** (a "🔑 API tokens" panel once logged in) give scripts a revocable `Authorization: Bearer` credential instead of a real password.
+- Optional **admin role** (`[admins]` in `config.ini`) and **monthly print quotas**: admins get a panel to cap how many sheets each user may print per month; everyone else sees their own usage against their limit. Enforced up front — a job that would exceed it never reaches the printer.
 - **QR code** (📱 button in the header) encoding the server's own URL, so a phone can open the web UI without typing an IP address.
 - Optional **HTTPS for the web UI**: point `ssl_certfile` / `ssl_keyfile` in `config.ini` at a certificate and key, and the web port serves TLS instead of plain HTTP — no reverse proxy needed if you already have a certificate (e.g. from your router, a LAN CA, or `mkcert`).
 - One **config file** (`config.ini`) for language, ports, folders and users.
@@ -421,6 +422,19 @@ It asks for the password twice and prints a line like `pbkdf2_sha256$390000$...`
 
 Leave `auth = none` (the default) on a trusted home network where everyone may print and scan.
 
+**Admins and print quotas.** An optional `[admins]` section names which users (from `[users]`) can manage everyone's monthly print quota:
+
+```ini
+[users]
+anna = pbkdf2_sha256$390000$...$...
+john = plain-text-password
+
+[admins]
+anna
+```
+
+Anna gets a **⚙ Quotas** panel (next to Sign out) listing every user, sheets printed this calendar month, and an editable monthly limit — blank means unlimited. John, not being an admin, instead sees his own usage next to his name (`john · 42/100 sheets this month`) but can't see or change anyone else's. A print that would exceed the limit is rejected up front (HTTP 402) before it reaches the printer — from the web UI, IPP, or the copy-a-scan endpoint alike. Usage is derived from the job history itself (not a separate counter), so it can never drift and naturally resets at the start of a month. Jobs with no known user (`auth = none`, or an anonymous IPP client) are never limited.
+
 ## How it works
 
 ```mermaid
@@ -547,6 +561,9 @@ The UI is a thin client over a JSON API; interactive docs are at `http://<server
 | GET | `/api/tokens` | the logged-in user's API tokens (name, created/last-used dates — never the token itself) |
 | POST | `/api/tokens` | `{"name": "..."}` → creates a token, returns it once (`token` field) |
 | DELETE | `/api/tokens/{id}` | revoke a token |
+| GET | `/api/quotas/me` | the logged-in user's own monthly limit and sheets used so far |
+| GET | `/api/quotas` | every user's limit and usage (admins only, see [Admins and print quotas](#users-and-sign-in)) |
+| PUT | `/api/quotas/{user}` | `{"limit": 100}` or `{"limit": null}` → set/clear a user's monthly limit (admins only) |
 | POST | `/ipp/print` (port 631) | IPP endpoint |
 | GET | `/eSCL/ScannerCapabilities` · `/eSCL/ScannerStatus` | eSCL (AirScan) capabilities/status, XML |
 | POST | `/eSCL/ScanJobs` | eSCL: create a scan job from a `ScanSettings` XML body → `Location` header |
