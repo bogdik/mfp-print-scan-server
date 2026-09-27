@@ -27,16 +27,36 @@ def local_ipv4_addresses() -> list:
 
 
 class Announcer:
-    """One registered mDNS service. Missing `zeroconf`, no local IPv4
-    address, or a registration failure all degrade to a logged warning and
-    register() returning False — never a crash; the service just isn't
-    discoverable and clients fall back to being added by address."""
+    """One registered mDNS service, plus optional subtype PTR records (e.g.
+    AirPrint's "_universal._sub._ipp._tcp.local." — the same instance, just
+    also listed under a subtype so clients that browse for that subtype
+    specifically can find it, the way AirPrint does instead of browsing
+    plain "_ipp._tcp").
+
+    A subtype needs its own `Zeroconf` instance: the installed zeroconf's
+    registry keys a registered service by name alone (not name+type), so a
+    second ServiceInfo with the *same* instance name under a *different*
+    type — which is exactly what a DNS-SD subtype is — collides with
+    "ServiceNameAlreadyRegistered" if registered on the same instance
+    (see https://github.com/python-zeroconf/python-zeroconf/issues/1287,
+    unresolved upstream as of this writing). Two independent responders for
+    the identical name/port/server sidesteps that using only zeroconf's
+    public API, confirmed by an end-to-end register-then-browse test.
+
+    Missing `zeroconf`, no local IPv4 address, or a registration failure all
+    degrade to a logged warning and register() returning False — never a
+    crash; the service just isn't discoverable and clients fall back to
+    being added by address. A subtype specifically failing to register
+    only loses that extra listing, not the main advertisement."""
 
     def __init__(self) -> None:
         self._zc = None
         self._info = None
+        self._subtypes: list = []  # [(Zeroconf, ServiceInfo), ...]
 
-    def register(self, service_type: str, name: str, port: int, txt: dict, server: str) -> bool:
+    def register(
+        self, service_type: str, name: str, port: int, txt: dict, server: str, subtypes: list[str] = (),
+    ) -> bool:
         try:
             from zeroconf import ServiceInfo, Zeroconf
         except ImportError:
@@ -51,13 +71,10 @@ class Announcer:
             logger.warning("mDNS: no local IPv4 address found, not advertising %s", service_type)
             return False
 
+        instance_name = f"{name}.{service_type}"
+        properties = {k: v.encode() for k, v in txt.items()}
         info = ServiceInfo(
-            service_type,
-            f"{name}.{service_type}",
-            addresses=addresses,
-            port=port,
-            properties={k: v.encode() for k, v in txt.items()},
-            server=server,
+            service_type, instance_name, addresses=addresses, port=port, properties=properties, server=server,
         )
         try:
             zc = Zeroconf()
@@ -67,9 +84,28 @@ class Announcer:
             return False
         self._zc, self._info = zc, info
         logger.info("mDNS: advertising %r as %s on port %d", name, service_type.rstrip("."), port)
+
+        for subtype in subtypes:
+            try:
+                sub_zc = Zeroconf()
+                sub_info = ServiceInfo(
+                    f"{subtype}._sub.{service_type}", instance_name,
+                    addresses=addresses, port=port, properties=properties, server=server,
+                )
+                sub_zc.register_service(sub_info)
+            except Exception:
+                logger.exception("mDNS: failed to register %r subtype for %s", subtype, service_type)
+                continue
+            self._subtypes.append((sub_zc, sub_info))
         return True
 
     def unregister(self) -> None:
+        for sub_zc, sub_info in self._subtypes:
+            try:
+                sub_zc.unregister_service(sub_info)
+            finally:
+                sub_zc.close()
+        self._subtypes = []
         if self._zc is None:
             return
         try:
@@ -78,3 +114,4 @@ class Announcer:
         finally:
             self._zc.close()
             self._zc = None
+            self._info = None

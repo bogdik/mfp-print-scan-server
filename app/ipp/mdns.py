@@ -1,8 +1,14 @@
 """Bonjour/mDNS advertisement for the IPP printer (Windows only, matching
 where the IPP server itself runs — see is_supported() in .printer). Lets
 macOS/iOS "Add Printer" and Android find it automatically instead of
-someone typing its address, the same way any AirPrint-style printer
-announces itself.
+someone typing its address.
+
+Also makes it show up as an **AirPrint** printer: iOS/macOS don't browse
+plain "_ipp._tcp" like everything else, they specifically look for the
+"_universal" subtype (AIRPRINT_SUBTYPE below) and require a non-empty "URF"
+TXT record before they'll list a printer at all. We don't decode Apple's own
+URF raster format, so "URF=none" tells them to use PDF/JPEG instead — same
+convention airprint-generate and CUPS's own AirPrint support use.
 
 The actual zeroconf plumbing (address discovery, register/unregister) is
 shared with the eSCL announcement in escl/mdns.py — see ../mdns_util.py."""
@@ -20,6 +26,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SERVICE_TYPE = "_ipp._tcp.local."
+AIRPRINT_SUBTYPE = "_universal"  # what AirPrint (iOS/macOS) browses for specifically
 
 # What this server can actually deliver (see ipp/printer.py's FORMAT_*):
 # PDF, PWG Raster and JPEG, no AirPrint URF raster.
@@ -59,8 +66,16 @@ class MdnsAnnouncer:
             "Color": "T" if caps.color else "F",
             "Duplex": "T" if caps.duplex else "F",
             "UUID": str(ipp_printer.printer_uuid()),
+            # Required, non-empty, for AirPrint (iOS/macOS "Add Printer") to list this
+            # printer at all — see AIRPRINT_SUBTYPE below. "none" is the standard value
+            # for a printer that doesn't decode Apple's own URF raster format and
+            # instead prints the PDF/JPEG already advertised in `pdl` above (the same
+            # convention used by airprint-generate and CUPS's own AirPrint support).
+            "URF": "none",
         }
-        self._announcer.register(SERVICE_TYPE, caps.printer_name, ipp_port, txt, f"{host}.local.")
+        self._announcer.register(
+            SERVICE_TYPE, caps.printer_name, ipp_port, txt, f"{host}.local.", subtypes=[AIRPRINT_SUBTYPE],
+        )
 
     def stop(self) -> None:
         self._announcer.unregister()

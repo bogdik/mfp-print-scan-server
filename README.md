@@ -81,6 +81,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 - Clients render documents themselves and send **PDF, PWG Raster or JPEG**, sized to the media and margins the server advertises. The server prints them 1:1.
 - Capabilities come from the real driver: 20+ paper sizes with standard PWG names and real margins, paper types, color, duplex, quality.
 - **Bonjour/mDNS announcement** (Windows, `mdns = yes` by default): macOS, iOS and Android find the printer by name in "Add Printer" instead of needing its address typed in.
+- **AirPrint**: advertised under the `_universal` subtype iOS/macOS specifically browse for (plain `_ipp._tcp` isn't enough for AirPrint to list a printer), with the `URF` TXT record it requires to be present. It doesn't decode Apple's own URF raster format, so `URF=none` tells AirPrint to send PDF or JPEG instead — the same convention `airprint-generate` and CUPS's own AirPrint support use — meaning an iPhone/iPad can print to it directly, no app or profile needed.
 - Tested with Linux/CUPS clients (text editor, LibreOffice, PDFs, photos).
 
 ### Scanning
@@ -117,6 +118,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 | Linux client (CUPS, driverless IPP Everywhere) → this server | ✅ printing from GNOME Text Editor, LibreOffice, PDF viewer |
 | Windows client with "Microsoft IPP Class Driver" | ⚠️ implemented per spec, not yet confirmed on a real client |
 | Bonjour/mDNS advertisement (`zeroconf`) | ⚠️ TXT record verified correct with `avahi-browse` against a stand-in printer object on Linux; not yet run for real on Windows, and no macOS/iOS/Android device has tried discovering it |
+| AirPrint `_universal` subtype registration | ⚠️ verified with a real register-then-browse test (a client `Zeroconf()` instance browsing `_universal._sub._ipp._tcp.local.` found the test service, resolved, with the correct `URF=none` and port) — not yet tried from an actual iPhone/iPad "Add Printer" |
 | HTTPS for the web UI (`ssl_certfile`/`ssl_keyfile`) | ✅ tested on Linux: serves TLS only on the web port, falls back to plain HTTP cleanly if only one of the two is set |
 | Live printer status (Linux, via CUPS's own IPP) | ✅ tested against the real MG2500: correctly reports idle, and stopped+"paused" for a disabled queue; ink levels are unavailable for this printer's driver (expected, not a bug — see Known limitations) |
 | Live printer status (Windows, via WMI) | ⚠️ written against documented `Win32_Printer` fields, not yet run on a real Windows machine |
@@ -481,6 +483,8 @@ Other formats go through the `printto` shell verb. In that case the options are 
 
 `app/printing/pwg.py` decodes PWG Raster.
 
+**AirPrint's mDNS subtype.** AirPrint doesn't browse plain `_ipp._tcp` like everything else — it specifically looks for the `_universal` subtype (`_universal._sub._ipp._tcp.local.`) and won't list a printer without a non-empty `URF` TXT record. The obvious way to add that — a second `ServiceInfo` for the same instance name, just under the subtype's type — collides in the installed `zeroconf` library with `ServiceNameAlreadyRegistered`, because its registry keys a registered service by name alone, not name+type ([open upstream issue](https://github.com/python-zeroconf/python-zeroconf/issues/1287)). `mdns_util.py`'s `Announcer` works around it with a second, independent `Zeroconf()` instance for each subtype, registering the identical name/port/server — confirmed end-to-end with a real register-then-browse test rather than just reading the source, since a subtly wrong TXT/PTR here would silently just not work on an actual iPhone.
+
 **Scanning.**
 - Windows: WIA through COM, on one dedicated thread, since COM objects are apartment-bound and a flatbed does one scan at a time.
 - Linux: `scanimage`; options are parsed from `scanimage --all-options`.
@@ -707,7 +711,7 @@ Stack:
 
 - **Plain HTTP by default.** Set `ssl_certfile`/`ssl_keyfile` in `config.ini` for HTTPS (see [Security](#security)), or use a reverse proxy — either way it's still meant for a LAN, not the open internet.
 - **Bonjour/mDNS** advertises the IPP printer on Windows only, matching where the IPP server itself runs; on Linux, share it through CUPS instead (which does its own mDNS via Avahi).
-- **No AirPrint (URF raster)**, so iPhones can't print to it directly yet.
+- **AirPrint is Windows-only**, for the same reason as Bonjour/mDNS above (it's the IPP server's own advertisement). Verified at the protocol level (registers correctly, resolves via a real `_universal` subtype browse, an actual Canon MG2500 on the same LAN advertises itself with `URF=V1.4,CP1,W8,PQ4,SRGB24,RS600,FN3` via CUPS for comparison) but not against a real iPhone/iPad — if "Add Printer" on iOS doesn't find it, share the printer through CUPS on a Linux box instead, which has mature, widely-used AirPrint support built in.
 - **No OCR** for scans.
 - **Documents without LibreOffice** are printed by whatever program is registered for them, with no preview; install LibreOffice for exact results.
 - **Duplex**: the MG2500 driver reports duplex, but the printer has no automatic duplexer, so the driver does manual duplex.
