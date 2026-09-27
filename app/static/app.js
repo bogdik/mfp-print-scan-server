@@ -41,6 +41,78 @@ document.querySelectorAll(".lang-button").forEach((button) =>
   })
 );
 
+const qrToggle = document.getElementById("qr-toggle");
+const qrPanel = document.getElementById("qr-panel");
+qrToggle.addEventListener("click", () => (qrPanel.hidden = !qrPanel.hidden));
+document.getElementById("qr-close").addEventListener("click", () => (qrPanel.hidden = true));
+
+const tokensToggle = document.getElementById("tokens-toggle");
+if (tokensToggle) {
+  const tokensPanel = document.getElementById("tokens-panel");
+  const tokensList = document.getElementById("tokens-list");
+  const tokensForm = document.getElementById("tokens-create-form");
+  const tokensNameInput = document.getElementById("tokens-name-input");
+  const tokensNew = document.getElementById("tokens-new");
+  const tokensNewValue = document.getElementById("tokens-new-value");
+
+  async function loadTokens() {
+    try {
+      const res = await fetch("/api/tokens");
+      if (!res.ok) throw new Error(await res.text());
+      const items = await res.json();
+      tokensList.innerHTML = items.length
+        ? items
+            .map(
+              (tok) => `<div class="token-row">
+                <span class="token-name">${escapeHtml(tok.name)}</span>
+                <span class="token-date">${new Date(tok.created_at * 1000).toLocaleDateString()}</span>
+                <button type="button" class="ghost-button danger" data-revoke="${tok.id}">${t("tokens_revoke")}</button>
+              </div>`
+            )
+            .join("")
+        : `<p class="empty">${escapeHtml(t("tokens_none"))}</p>`;
+    } catch (err) {
+      // silent — tokens panel is non-critical
+    }
+  }
+
+  tokensForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/tokens", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: tokensNameInput.value }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(errorDetail(data, t("error")));
+      tokensNameInput.value = "";
+      tokensNewValue.textContent = data.token;
+      tokensNew.hidden = false;
+      loadTokens();
+    } catch (err) {
+      // best-effort: creation failed silently rather than blocking the panel
+    }
+  });
+
+  tokensList.addEventListener("click", async (e) => {
+    const button = e.target.closest("[data-revoke]");
+    if (!button) return;
+    if (!confirm(t("tokens_confirm_revoke"))) return;
+    await fetch(`/api/tokens/${encodeURIComponent(button.dataset.revoke)}`, { method: "DELETE" });
+    loadTokens();
+  });
+
+  qrToggle.addEventListener("click", () => (tokensPanel.hidden = true));
+  tokensToggle.addEventListener("click", () => {
+    qrPanel.hidden = true;
+    tokensPanel.hidden = !tokensPanel.hidden;
+    tokensNew.hidden = true;
+    if (!tokensPanel.hidden) loadTokens();
+  });
+  document.getElementById("tokens-close").addEventListener("click", () => (tokensPanel.hidden = true));
+}
+
 // --- Cookie helpers (shared with scan.js) -----------------------------------
 // Print/scan settings are remembered per browser for a year, the same way
 // as the language choice above — no server-side storage involved.

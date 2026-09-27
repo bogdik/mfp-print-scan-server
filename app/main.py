@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
+import qrcode
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
@@ -28,7 +29,7 @@ from .ipp.mdns import MdnsAnnouncer
 from .ipp.printer import IppPrinter, is_supported as ipp_supported
 from .models import (
     JobOut, JobStatus, OptionChoiceOut, PreviewOut, PrinterOptionOut, PrinterOut, PrinterStatusOut, SupplyLevelOut,
-    UsageByKeyOut, UsageOut, UsageTotalsOut,
+    TokenCreateIn, TokenCreateOut, TokenOut, UsageByKeyOut, UsageOut, UsageTotalsOut,
 )
 from .preview import PreviewUnavailable, render_preview
 from .scan_routes import create_router as create_scan_router
@@ -38,6 +39,7 @@ from .printing.convert import page_count
 from .printing.factory import get_backend
 from .printing.layout import DEFAULT_LAYOUT
 from .storage import job_store
+from .tokens import token_store
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR.parent / "uploads"
@@ -138,7 +140,9 @@ async def require_login(request: Request, call_next):
     if user is None and header:
         if auth.is_locked(ip):
             return JSONResponse({"detail": t("auth.locked")}, status_code=429)
-        user = await run_in_threadpool(auth.basic_user, header)
+        user = auth.bearer_user(header)
+        if user is None and not header.lower().startswith("bearer "):
+            user = await run_in_threadpool(auth.basic_user, header)
         if user is None:
             auth.record_failure(ip)
     if user is not None:
@@ -207,6 +211,32 @@ def logout():
     return response
 
 
+def _require_user(request: Request) -> str:
+    user = getattr(request.state, "user", None)
+    if user is None:
+        raise HTTPException(status_code=401, detail=t("auth.required"))
+    return user
+
+
+@app.get("/api/tokens", response_model=list[TokenOut])
+def list_tokens(request: Request):
+    return token_store.list_for(_require_user(request))
+
+
+@app.post("/api/tokens", response_model=TokenCreateOut)
+def create_token(body: TokenCreateIn, request: Request):
+    user = _require_user(request)
+    token_id, raw = token_store.create(user, body.name)
+    return TokenCreateOut(id=token_id, name=body.name.strip()[:60] or token_id, token=raw)
+
+
+@app.delete("/api/tokens/{token_id}")
+def delete_token(token_id: str, request: Request):
+    if not token_store.revoke(_require_user(request), token_id):
+        raise HTTPException(status_code=404, detail=t("err.token_not_found"))
+    return {"deleted": 1}
+
+
 @app.middleware("http")
 async def request_language(request: Request, call_next):
     """Every request runs in its UI language, so labels and error messages
@@ -228,7 +258,19 @@ def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {
         "lang": current_lang.get(), "langs": LANGS, "messages": js_messages(),
         "user": getattr(request.state, "user", None),
+        "base_url": str(request.base_url),
     })
+
+
+@app.get("/api/qrcode.png")
+def qrcode_png(request: Request):
+    """QR code for this page's own URL, so a phone camera can open it without
+    typing the server's address — same idea as the printer's Bonjour/mDNS
+    announcement, but for the web UI itself."""
+    img = qrcode.make(str(request.base_url), box_size=8, border=2)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
 
 
 @app.get("/api/printers", response_model=list[PrinterOut])

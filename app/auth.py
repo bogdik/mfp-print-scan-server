@@ -14,6 +14,7 @@ import threading
 import time
 
 from .config import settings, verify_password
+from .tokens import token_store
 
 SESSION_COOKIE = "mfp_session"
 MAX_FAILURES = 5  # failed logins per IP ...
@@ -84,6 +85,13 @@ def basic_user(header: str | None) -> str | None:
     except ValueError:
         return None
     return user if check_credentials(user, password) else None
+
+
+def bearer_user(header: str | None) -> str | None:
+    """User from an `Authorization: Bearer <token>` header, if the token is valid."""
+    if not header or not header.lower().startswith("bearer "):
+        return None
+    return token_store.authenticate(header[7:].strip())
 
 
 # --- Brute-force protection ------------------------------------------------

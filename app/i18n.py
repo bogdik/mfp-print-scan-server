@@ -79,6 +79,24 @@ MESSAGES: dict[str, dict[str, str]] = {
     "web.preview": {"ru": "Предпросмотр", "en": "Preview"},
     "web.print": {"ru": "Печать", "en": "Print"},
     "web.hide": {"ru": "Скрыть", "en": "Hide"},
+    "web.qr_button": {"ru": "QR-код", "en": "QR code"},
+    "web.qr_hint": {
+        "ru": "Отсканируйте QR-код камерой телефона, чтобы открыть эту страницу",
+        "en": "Scan with your phone's camera to open this page",
+    },
+    "web.tokens_button": {"ru": "API-токены", "en": "API tokens"},
+    "web.tokens_name_placeholder": {"ru": "Название (необязательно)", "en": "Name (optional)"},
+    "web.tokens_create": {"ru": "Создать", "en": "Create"},
+    "web.tokens_created_notice": {
+        "ru": "Скопируйте токен сейчас — второй раз он не покажется",
+        "en": "Copy this token now — it won't be shown again",
+    },
+    "web.tokens_none": {"ru": "Токенов пока нет", "en": "No tokens yet"},
+    "web.tokens_revoke": {"ru": "Отозвать", "en": "Revoke"},
+    "web.tokens_confirm_revoke": {
+        "ru": "Отозвать этот токен? Программы, использующие его, перестанут работать.",
+        "en": "Revoke this token? Programs using it will stop working.",
+    },
     "web.maintenance": {"ru": "Обслуживание", "en": "Maintenance"},
     "web.recent_jobs": {"ru": "Последние задания", "en": "Recent jobs"},
     "web.clear": {"ru": "Очистить", "en": "Clear"},
@@ -272,6 +290,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     },
     "err.expect_ipp": {"ru": "Ожидается Content-Type: application/ipp", "en": "Expected Content-Type: application/ipp"},
     "err.job_not_found": {"ru": "Задание не найдено", "en": "Job not found"},
+    "err.token_not_found": {"ru": "Токен не найден", "en": "Token not found"},
     "err.job_printing": {"ru": "Задание ещё печатается", "en": "The job is still printing"},
     "err.interrupted": {"ru": "Сервер был перезапущен во время печати", "en": "The server was restarted while printing"},
     "err.no_print_app": {

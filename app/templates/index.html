@@ -15,13 +15,36 @@
           <span class="user-name">👤 {{ user }}</span>
           <button type="submit" class="ghost-button">{{ t('web.logout') }}</button>
         </form>
+        <button type="button" id="tokens-toggle" class="ghost-button">🔑 {{ t('web.tokens_button') }}</button>
         {% endif %}
+        <button type="button" id="qr-toggle" class="ghost-button" title="{{ t('web.qr_hint') }}">📱 {{ t('web.qr_button') }}</button>
         <div class="lang-switch" role="group" aria-label="{{ t('web.language') }}">
           {% for code in langs %}
           <button type="button" class="lang-button" data-lang="{{ code }}" aria-pressed="{{ 'true' if code == lang else 'false' }}">{{ code | upper }}</button>
           {% endfor %}
         </div>
       </div>
+      <div id="qr-panel" class="qr-panel" hidden>
+        <img src="/api/qrcode.png" alt="{{ t('web.qr_button') }}" width="160" height="160" />
+        <p class="qr-hint">{{ t('web.qr_hint') }}</p>
+        <p class="qr-url">{{ base_url }}</p>
+        <button type="button" id="qr-close" class="ghost-button">{{ t('web.hide') }}</button>
+      </div>
+      {% if user %}
+      <div id="tokens-panel" class="qr-panel tokens-panel" hidden>
+        <h3>{{ t('web.tokens_button') }}</h3>
+        <div id="tokens-list" class="tokens-list"></div>
+        <form id="tokens-create-form" class="tokens-create-form">
+          <input type="text" id="tokens-name-input" placeholder="{{ t('web.tokens_name_placeholder') }}" maxlength="60" />
+          <button type="submit" class="ghost-button">{{ t('web.tokens_create') }}</button>
+        </form>
+        <div id="tokens-new" class="tokens-new" hidden>
+          <p>{{ t('web.tokens_created_notice') }}</p>
+          <code id="tokens-new-value"></code>
+        </div>
+        <button type="button" id="tokens-close" class="ghost-button">{{ t('web.hide') }}</button>
+      </div>
+      {% endif %}
       <h1>🖨️ {{ t('web.title') }}</h1>
       <nav class="tabs" role="tablist">
         <button type="button" class="tab" role="tab" data-tab="print" aria-selected="true">{{ t('web.tab_print') }}</button>

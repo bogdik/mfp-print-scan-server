@@ -72,6 +72,23 @@ class UsageOut(BaseModel):
     by_printer: list[UsageByKeyOut]
 
 
+class TokenOut(BaseModel):
+    id: str
+    name: str
+    created_at: float
+    last_used_at: float | None = None
+
+
+class TokenCreateIn(BaseModel):
+    name: str = ""
+
+
+class TokenCreateOut(BaseModel):
+    id: str
+    name: str
+    token: str  # only ever shown once, right after creation
+
+
 class JobOut(BaseModel):
     id: str
     filename: str

@@ -95,7 +95,8 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 - **Nozzle check** and **head cleaning** for Canon inkjets: byte-for-byte the maintenance job the Canon driver itself sends (IVEC mode switch + BJL commands), captured from the Windows driver's print queue.
 
 ### Other
-- Optional **sign-in** (`auth = yes` in `config.ini`): users and passwords (hashed or plain) in the config, remembered sessions, brute-force lockout, HTTP Basic for scripts, optional Basic auth for IPP.
+- Optional **sign-in** (`auth = yes` in `config.ini`): users and passwords (hashed or plain) in the config, remembered sessions, brute-force lockout, HTTP Basic for scripts, optional Basic auth for IPP. **API tokens** (a "🔑 API tokens" panel once logged in) give scripts a revocable `Authorization: Bearer` credential instead of a real password.
+- **QR code** (📱 button in the header) encoding the server's own URL, so a phone can open the web UI without typing an IP address.
 - Optional **HTTPS for the web UI**: point `ssl_certfile` / `ssl_keyfile` in `config.ini` at a certificate and key, and the web port serves TLS instead of plain HTTP — no reverse proxy needed if you already have a certificate (e.g. from your router, a LAN CA, or `mkcert`).
 - One **config file** (`config.ini`) for language, ports, folders and users.
 - **English / Russian** UI with a remembered choice; server messages follow the page language.
@@ -406,6 +407,11 @@ It asks for the password twice and prints a line like `pbkdf2_sha256$390000$...`
   ```bash
   curl -u anna:password http://192.168.1.20:8000/api/jobs
   ```
+- **API tokens** are an alternative to putting your real password in a script: click **🔑 API tokens** next to Sign out (once logged in) to generate one. The raw token is shown once — copy it then — and works as `Authorization: Bearer <token>` instead of Basic:
+  ```bash
+  curl -H "Authorization: Bearer <token>" http://192.168.1.20:8000/api/jobs
+  ```
+  A token authenticates as whoever created it and can be revoked independently (from the same panel) without changing that user's password or logging out their browser session. Only its hash is stored, so `data/tokens.json` leaking doesn't hand out a working credential.
 
 **IPP printing** is not covered by `auth`: with `auth = yes` IPP stays open unless `ipp_auth = yes`. With `ipp_auth = yes` the printer requires HTTP Basic, and advertises it (`uri-authentication-supported = basic`):
 - CUPS asks for the name and password, or they can be put into the URI: `ipp://anna:password@server:631/ipp/print`;
@@ -537,6 +543,10 @@ The UI is a thin client over a JSON API; interactive docs are at `http://<server
 | DELETE | `/api/scans/{name}` | delete a scan |
 | POST | `/api/scans/merge` | `{"names": [...]}` → one PDF |
 | POST | `/api/scans/{name}/print` | print a scan at actual size |
+| GET | `/api/qrcode.png` | QR code for this page's own URL |
+| GET | `/api/tokens` | the logged-in user's API tokens (name, created/last-used dates — never the token itself) |
+| POST | `/api/tokens` | `{"name": "..."}` → creates a token, returns it once (`token` field) |
+| DELETE | `/api/tokens/{id}` | revoke a token |
 | POST | `/ipp/print` (port 631) | IPP endpoint |
 | GET | `/eSCL/ScannerCapabilities` · `/eSCL/ScannerStatus` | eSCL (AirScan) capabilities/status, XML |
 | POST | `/eSCL/ScanJobs` | eSCL: create a scan job from a `ScanSettings` XML body → `Location` header |
@@ -670,7 +680,7 @@ python run.py
 `MFP_RELOAD=1` serves only the web port and reloads on changes in `app/`. On Windows, uvicorn's reloader occasionally keeps the old worker running; restart manually if changes don't show up.
 
 Stack:
-- **backend**: FastAPI, uvicorn, pywin32, pypdfium2, Pillow, zeroconf;
+- **backend**: FastAPI, uvicorn, pywin32, pypdfium2, Pillow, zeroconf, qrcode;
 - **frontend**: plain HTML/CSS/JS, no build step.
 
 ## Known limitations
