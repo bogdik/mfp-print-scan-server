@@ -489,8 +489,8 @@ async def print_file(
     job_store.add(job)
 
     try:
-        note = await run_in_threadpool(backend.print_file, dest, printer, copies, parsed_options)
-        job = job_store.update(job_id, status=JobStatus.SENT, note=note)
+        result = await run_in_threadpool(backend.print_file, dest, printer, copies, parsed_options)
+        job = job_store.update(job_id, status=JobStatus.SENT, note=result.note, backend_job_id=result.job_id)
     except Exception as exc:
         # Anything unexpected must still end the job, or it stays "queued"
         # forever (and can't be deleted from history).
@@ -552,6 +552,23 @@ def delete_job(job_id: str):
 def clear_jobs():
     """Clears finished jobs (and their uploaded files); ones still printing stay."""
     return {"deleted": len(job_store.clear())}
+
+
+@app.post("/api/jobs/{job_id}/cancel", response_model=JobOut)
+async def cancel_job(job_id: str):
+    """Attempts to pull a job back out of the OS's own print queue. Works
+    only when the backend could report an id for it (see PrintResult) — a
+    job still not obtainable (e.g. Windows' ShellExecute fallback) or one
+    that's already finished printing can't be canceled this way."""
+    job = job_store.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=t("err.job_not_found"))
+    if job.status not in (JobStatus.QUEUED, JobStatus.SENT) or not job.backend_job_id:
+        raise HTTPException(status_code=409, detail=t("err.job_not_cancelable"))
+    ok = await run_in_threadpool(backend.cancel_job, job.printer, job.backend_job_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail=t("err.job_cancel_failed"))
+    return job_store.update(job_id, status=JobStatus.CANCELLED, note=t("job.cancelled_note"))
 
 
 @app.get("/api/usage", response_model=UsageOut)

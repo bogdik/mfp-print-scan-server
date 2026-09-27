@@ -174,8 +174,8 @@ def create_router(print_backend: PrintBackend, scanner: ScanBackend, scans_dir: 
         )
         job_store.add(job)
         try:
-            note = await run_in_threadpool(print_backend.print_file, path, printer, copies, parsed, "actual")
-            return job_store.update(job.id, status=JobStatus.SENT, note=note)
+            result = await run_in_threadpool(print_backend.print_file, path, printer, copies, parsed, "actual")
+            return job_store.update(job.id, status=JobStatus.SENT, note=result.note, backend_job_id=result.job_id)
         except Exception as exc:  # never leave the job "queued" forever
             return job_store.update(job.id, status=JobStatus.FAILED, error=str(exc))
 

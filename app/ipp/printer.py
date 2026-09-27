@@ -622,7 +622,7 @@ class IppPrinter:
                 # PDF/PWG pages are already the whole sheet with the margins we
                 # advertised; a JPEG is just a picture — fit it to the page.
                 scaling = "fit" if fmt == FORMAT_JPEG else "sheet"
-                note = self.backend.print_file(path, job.printer, job.copies, job.options, scaling)
+                result = self.backend.print_file(path, job.printer, job.copies, job.options, scaling)
             except quotas.QuotaExceeded as exc:
                 logger.info("IPP job %d rejected: %s", job.id, exc)
                 self._finish(job, JOB_ABORTED, "aborted-by-system", str(exc))
@@ -633,7 +633,8 @@ class IppPrinter:
                 logger.exception("IPP job %d crashed", job.id)
                 self._finish(job, JOB_ABORTED, "aborted-by-system", str(exc))
             else:
-                self._finish(job, JOB_COMPLETED, "job-completed-successfully", note or "")
+                job_store.update(job.web_job_id, backend_job_id=result.job_id)
+                self._finish(job, JOB_COMPLETED, "job-completed-successfully", result.note or "")
             finally:
                 path.unlink(missing_ok=True)
 

@@ -8,6 +8,7 @@ class JobStatus(str, Enum):
     QUEUED = "queued"
     SENT = "sent"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class PrinterOut(BaseModel):
@@ -111,3 +112,4 @@ class JobOut(BaseModel):
     note: str | None = None  # e.g. settings the server had to adjust
     user: str | None = None  # who sent it, when known (auth=yes, or an IPP client's own user name)
     pages: int | None = None  # best-effort sheet count (see printing/convert.py's page_count()); None = not counted
+    backend_job_id: str | None = None  # OS print-queue job id, for cancel_job(); None if unobtainable

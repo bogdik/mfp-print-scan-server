@@ -3,7 +3,9 @@ import math
 import time
 from pathlib import Path
 
-from .base import MediaInfo, OptionChoice, PrintBackend, PrinterInfo, PrinterOption, PrinterStatus, PrintError
+from .base import (
+    MediaInfo, OptionChoice, PrintBackend, PrinterInfo, PrinterOption, PrinterStatus, PrintError, PrintResult,
+)
 from ..i18n import t
 from . import media_constraints
 from .convert import to_pdf
@@ -182,7 +184,7 @@ class WindowsPrintBackend(PrintBackend):
         copies: int = 1,
         options: dict[str, str] | None = None,
         scaling: str = "fit",
-    ) -> str | None:
+    ) -> PrintResult:
         import win32api
         import win32print
 
@@ -196,14 +198,14 @@ class WindowsPrintBackend(PrintBackend):
         pdf = file_path if suffix == ".pdf" else to_pdf(file_path)
         if pdf is not None:
             with PDFIUM_LOCK:
-                self._print_direct(file_path, target, copies, options, lambda: self._pdf_pages(pdf), scaling)
-            return note
+                job_id = self._print_direct(file_path, target, copies, options, lambda: self._pdf_pages(pdf), scaling)
+            return PrintResult(note=note, job_id=str(job_id) if job_id else None)
         if suffix in IMAGE_EXTENSIONS:
-            self._print_direct(file_path, target, copies, options, lambda: self._image_pages(file_path), scaling)
-            return note
+            job_id = self._print_direct(file_path, target, copies, options, lambda: self._image_pages(file_path), scaling)
+            return PrintResult(note=note, job_id=str(job_id) if job_id else None)
         if suffix == ".pwg":
-            self._print_direct(file_path, target, copies, options, lambda: self._raster_pages(file_path), scaling)
-            return note
+            job_id = self._print_direct(file_path, target, copies, options, lambda: self._raster_pages(file_path), scaling)
+            return PrintResult(note=note, job_id=str(job_id) if job_id else None)
 
         if options:
             self._apply_devmode(target, options)
@@ -216,7 +218,25 @@ class WindowsPrintBackend(PrintBackend):
             except Exception as exc:
                 raise PrintError(t("err.no_print_app", ext=file_path.suffix or t("err.this_type"), error=exc)) from exc
             time.sleep(1)  # give the spooler a moment before the next copy
-        return note
+        # No job id: the file went to whatever app registered "printto", not
+        # through our own spooler call — we have no handle to cancel it by.
+        return PrintResult(note=note, job_id=None)
+
+    def cancel_job(self, printer_name: str | None, job_id: str) -> bool:
+        import win32print
+
+        target = printer_name or win32print.GetDefaultPrinter()
+        try:
+            handle = self._open_printer(target)
+        except PrintError:
+            return False
+        try:
+            win32print.SetJob(handle, int(job_id), 0, None, win32print.JOB_CONTROL_CANCEL)
+            return True
+        except Exception:
+            return False
+        finally:
+            win32print.ClosePrinter(handle)
 
     def _fix_media(self, printer_name: str, options: dict[str, str]) -> tuple[dict[str, str], str | None]:
         """Replaces a media type the printer would reject for the chosen
@@ -251,7 +271,7 @@ class WindowsPrintBackend(PrintBackend):
 
     def _print_direct(
         self, file_path: Path, printer_name: str, copies: int, options: dict[str, str], open_pages, scaling: str = "fit"
-    ) -> None:
+    ) -> int | None:
         """Draws pages straight into a printer DC (PDF via PDFium, images via
         Pillow). Unlike the ShellExecute path this doesn't depend on which
         app (if any) is registered for the file type, options go into this
@@ -291,7 +311,7 @@ class WindowsPrintBackend(PrintBackend):
                         return Placement(rotate=True, x=(area_w - h) / 2, y=(area_h - w) / 2, w=h, h=w)
                 return fit_page(page_w, page_h, area_w, area_h)
 
-            win32print.StartDoc(hdc, (file_path.name.split("_", 1)[-1], None, None, 0))
+            job_id = win32print.StartDoc(hdc, (file_path.name.split("_", 1)[-1], None, None, 0))
             try:
                 for _ in range(copies):
                     for page_w, page_h, draw in open_pages():
@@ -302,6 +322,7 @@ class WindowsPrintBackend(PrintBackend):
                 win32print.AbortDoc(hdc)
                 raise
             win32print.EndDoc(hdc)
+            return job_id
         except PrintError:
             raise
         except Exception as exc:

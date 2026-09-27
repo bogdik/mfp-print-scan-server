@@ -905,6 +905,11 @@ input[type="number"] {
   color: var(--warning);
 }
 
+.status-cancelled {
+  background: rgba(154, 161, 172, 0.15);
+  color: var(--text-dim);
+}
+
 .printer-status {
   display: flex;
   align-items: center;

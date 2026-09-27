@@ -1,4 +1,5 @@
 import http.client
+import os
 import re
 import subprocess
 import time
@@ -6,7 +7,9 @@ from pathlib import Path
 
 from ..i18n import t
 from ..ipp import protocol as ipp
-from .base import OptionChoice, PrintBackend, PrinterInfo, PrinterOption, PrintError, PrinterStatus, SupplyLevel
+from .base import (
+    OptionChoice, PrintBackend, PrinterInfo, PrinterOption, PrintError, PrinterStatus, PrintResult, SupplyLevel,
+)
 from .convert import to_pdf
 from .maintenance import TEST_PAGE, MaintenanceAction, actions_for, raw_command
 
@@ -133,7 +136,7 @@ class CupsPrintBackend(PrintBackend):
         copies: int = 1,
         options: dict[str, str] | None = None,
         scaling: str = "fit",  # CUPS applies its own scaling; IPP isn't served on Linux
-    ) -> None:
+    ) -> PrintResult:
         # Office documents / text go through LibreOffice → PDF when it's
         # installed, so the printout matches the preview; otherwise CUPS gets
         # the original file.
@@ -147,12 +150,30 @@ class CupsPrintBackend(PrintBackend):
         cmd += [str(path_to_print)]
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            # Force English output: `lp` localizes "request id is ..." (e.g.
+            # "id запроса ..." under a Russian locale), which would otherwise
+            # break the regex below depending on the server's own OS locale —
+            # unrelated to the web UI's per-request language.
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=30, env={**os.environ, "LC_ALL": "C", "LANG": "C"},
+            )
         except FileNotFoundError as exc:
             raise PrintError(t("err.cups_missing", cmd="lp")) from exc
 
         if result.returncode != 0:
             raise PrintError(result.stderr.strip() or t("err.cmd_failed", cmd="lp"))
+
+        # "request id is <printer>-<n> (1 file(s))" on success — that id is
+        # exactly what `cancel` takes, so capture it for cancel_job().
+        match = re.search(r"request id is (\S+)", result.stdout)
+        return PrintResult(job_id=match.group(1) if match else None)
+
+    def cancel_job(self, printer_name: str | None, job_id: str) -> bool:
+        try:
+            result = subprocess.run(["cancel", job_id], capture_output=True, timeout=10)
+        except FileNotFoundError:
+            return False
+        return result.returncode == 0
 
     def _make_and_model(self, printer_name: str) -> str:
         try:

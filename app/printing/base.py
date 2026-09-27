@@ -56,6 +56,12 @@ class SupplyLevel:
 
 
 @dataclass
+class PrintResult:
+    note: str | None = None  # e.g. a paper type the server had to substitute
+    job_id: str | None = None  # backend-specific id for cancel_job(); None if unobtainable
+
+
+@dataclass
 class MediaInfo:
     """A paper size as the driver knows it: `name` is the same value
     list_options() uses for paper_size; dimensions and hardware margins in mm."""
@@ -93,14 +99,18 @@ class PrintBackend(ABC):
         copies: int = 1,
         options: dict[str, str] | None = None,
         scaling: str = "fit",
-    ) -> str | None:
-        """Returns a note when options had to be adjusted for the printer
-        (e.g. media type unsupported for the paper size), else None.
-
-        scaling: "fit" — fit each page into the printable area (uploaded
+    ) -> PrintResult:
+        """scaling: "fit" — fit each page into the printable area (uploaded
         files); "sheet" — the page already is the whole sheet with margins
         left blank by the sender (IPP clients), print it 1:1; "actual" —
         real physical size from the file's dpi, centered (scans/copies)."""
+
+    def cancel_job(self, printer_name: str | None, job_id: str) -> bool:
+        """Attempts to stop a job still sitting in the OS's own print queue
+        (job_id from a prior print_file()'s PrintResult). False if it can't
+        be done — already printed, backend doesn't support it, etc. — which
+        the caller should treat as "maybe too late", not an error."""
+        return False
 
     def maintenance_actions(self, printer_name: str) -> list[MaintenanceAction]:
         """Service actions this printer supports (test page, cleaning...)."""

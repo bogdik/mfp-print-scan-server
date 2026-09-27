@@ -259,6 +259,7 @@ const STATUS_LABELS = {
   queued: t("status_queued"),
   sent: t("status_sent"),
   failed: t("status_failed"),
+  cancelled: t("status_cancelled"),
 };
 
 function updateDropzoneLabel() {
@@ -655,6 +656,12 @@ function renderJobs(jobs) {
             .join(", ")
         : "—";
       const printerName = job.printer || t("default_printer");
+      const canCancel = (job.status === "queued" || job.status === "sent") && job.backend_job_id;
+      const cancelButton = canCancel
+        ? `<button type="button" class="icon-button" data-cancel-job="${job.id}" title="${escapeHtml(t("cancel_job"))}" aria-label="${escapeHtml(t("cancel_job"))}">⏹</button>`
+        : "";
+      const deleteButton = job.status === "queued" ? "" :
+        `<button type="button" class="icon-button" data-delete-job="${job.id}" title="${escapeHtml(t("delete_from_history"))}" aria-label="${escapeHtml(t("delete_from_history"))}">✕</button>`;
       return `<tr>
         <td class="truncate" title="${escapeHtml(job.filename)}">${escapeHtml(job.filename)}</td>
         <td class="truncate" title="${escapeHtml(printerName)}">${escapeHtml(printerName)}</td>
@@ -663,8 +670,7 @@ function renderJobs(jobs) {
         <td><span class="status-badge status-${job.status}"${title}>${status}</span>${job.note
           ? `<span class="status-note" title="${escapeHtml(job.note)}">⚠</span>` : ""}</td>
         <td>${time}</td>
-        <td class="row-actions">${job.status === "queued" ? "" :
-          `<button type="button" class="icon-button" data-delete-job="${job.id}" title="${escapeHtml(t("delete_from_history"))}" aria-label="${escapeHtml(t("delete_from_history"))}">✕</button>`}</td>
+        <td class="row-actions">${cancelButton}${deleteButton}</td>
       </tr>`;
     })
     .join("");
@@ -729,11 +735,28 @@ form.addEventListener("submit", async (e) => {
 refreshJobsButton.addEventListener("click", loadJobs);
 
 jobsBody.addEventListener("click", async (e) => {
-  const button = e.target.closest("[data-delete-job]");
-  if (!button) return;
-  button.disabled = true;
-  await fetch(`/api/jobs/${encodeURIComponent(button.dataset.deleteJob)}`, { method: "DELETE" });
-  loadJobs();
+  const deleteButton = e.target.closest("[data-delete-job]");
+  if (deleteButton) {
+    deleteButton.disabled = true;
+    await fetch(`/api/jobs/${encodeURIComponent(deleteButton.dataset.deleteJob)}`, { method: "DELETE" });
+    loadJobs();
+    return;
+  }
+  const cancelButton = e.target.closest("[data-cancel-job]");
+  if (cancelButton) {
+    if (!confirm(t("confirm_cancel_job"))) return;
+    cancelButton.disabled = true;
+    try {
+      const res = await fetch(`/api/jobs/${encodeURIComponent(cancelButton.dataset.cancelJob)}/cancel`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(errorDetail(data, t("error")));
+    } catch (err) {
+      formMessage.textContent = err.message;
+      formMessage.className = "message error";
+    } finally {
+      loadJobs();
+    }
+  }
 });
 
 document.getElementById("clear-jobs").addEventListener("click", async () => {

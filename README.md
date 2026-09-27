@@ -71,6 +71,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 - **Documents and text** (`.txt`, `.rtf`, `.docx`, `.odt`, `.xlsx`, `.pptx`, …): with [LibreOffice](https://www.libreoffice.org/) installed on the server they're converted to PDF and then printed and previewed exactly like a PDF, on Windows and Linux. Non-UTF-8 text files (e.g. Windows-1251) are re-encoded first, so Cyrillic isn't garbled. Without LibreOffice they're handed to the program registered to print them (Notepad, Word/WordPad, …) and there's no preview.
 - **Paper type ↔ size rules**: some printers reject certain combinations, e.g. glossy photo paper in 13×18 on a Canon (error 4102). The server swaps in a compatible paper type and records a note on the job. The UI does the same as you pick options.
 - **Job history**: status, settings and notes. Stored in a JSON file, so it survives restarts. Delete single entries or clear it all; uploaded files are removed with their entries.
+- **Cancel a job** (⏹ next to a job, once it has a queue id — see [Known limitations](#known-limitations)) pulls it back out of the OS's own print queue, e.g. right after noticing the wrong file or copy count. It works even for a job already showing "Sent": that only means it reached CUPS/the Windows spooler, not that it has physically printed yet.
 - **Live printer status** next to the printer picker: idle/printing/stopped/offline, plus the reason when there is one (out of paper, cover open, jammed, ...), read from the OS (IPP on Linux, WMI on Windows) — not guessed. **Ink/toner levels** too, shown as a small bar per color, when the driver reports them (many CUPS drivers do via IPP marker levels; not currently for a USB-only Canon on the generic driver this project itself uses — see [Known limitations](#known-limitations)).
 - **Usage report**: a "Print usage" panel above the job history totals jobs/sheets/sent/failed and breaks them down by user (when known — logged-in username, or the IPP client's own user name) and by printer, with a **CSV export** for accounting or handing to whoever pays for the toner.
 
@@ -548,6 +549,7 @@ The UI is a thin client over a JSON API; interactive docs are at `http://<server
 | POST | `/api/preview` | multipart: `file`, `printer`, `options` → PNG pages as data URLs |
 | GET | `/api/jobs` | job history |
 | DELETE | `/api/jobs/{id}` · `/api/jobs` | delete one entry · clear finished jobs |
+| POST | `/api/jobs/{id}/cancel` | pull a job back out of the OS print queue (409 if it has no queue id, or is likely already printed) |
 | GET | `/api/usage` | usage totals (jobs/sheets/sent/failed) plus per-user and per-printer breakdowns, over the full job history |
 | GET | `/api/usage.csv` | the full job history as a CSV download (one row per job: user, printer, pages, sheets, status, …) |
 | GET | `/api/scanners` · `/api/scanners/capabilities?scanner_id=…` | scanners and their capabilities |
@@ -710,6 +712,7 @@ Stack:
 - **Duplex**: the MG2500 driver reports duplex, but the printer has no automatic duplexer, so the driver does manual duplex.
 - **Ink/toner levels aren't universal.** They come from the driver (IPP marker levels on Linux; nothing generic on Windows yet), so a USB inkjet on a generic driver — like this project's own Canon MG2500 — won't show them, while many laser printers and network-aware drivers will. The status itself (idle/printing/error) is separate and works regardless.
 - **Usage report attribution is best-effort.** The "user" column is only filled in when it's actually known: the logged-in web username (`auth = yes`) or an IPP client's own `requesting-user-name` — anonymous web uploads and print-via-`lp`/CUPS jobs show as "unknown". Page counts likewise come from `page_count()` (LibreOffice + PDFium) and are `None`/blank for formats it can't inspect (e.g. raw PWG Raster sent by an IPP client), which the report treats as 0 sheets rather than guessing.
+- **Not every job can be canceled.** A job gets a queue id (needed for ⏹ Cancel) whenever the server hands it to CUPS's `lp` (Linux) or draws it itself via GDI (Windows: PDFs, images, PWG Raster). A Windows document printed through whatever app is registered for its file type (no LibreOffice installed) goes through `ShellExecute` instead — the server never gets a handle back, so that one specific job can only be removed from history, not pulled out of the queue.
 
 ## License
 
