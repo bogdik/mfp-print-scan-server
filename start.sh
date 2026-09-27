@@ -21,12 +21,15 @@ if [ "${1:-}" = "--setup-only" ]; then
     exit 0
 fi
 
-# Port as the server will see it: config.ini, overridden by MFP_PORT.
-port="$(.venv/bin/python -c 'from app.config import settings; print(settings.port)')"
+# Port/scheme as the server will see them: config.ini, overridden by MFP_*.
+read -r port scheme <<< "$(.venv/bin/python -c '
+from app.config import settings
+print(settings.port, "https" if settings.ssl_certfile and settings.ssl_keyfile else "http")
+')"
 echo
-echo "[MFP] Web UI:         http://localhost:$port"
+echo "[MFP] Web UI:         $scheme://localhost:$port"
 for ip in $(hostname -I 2>/dev/null); do
-    echo "[MFP] On the network: http://$ip:$port"
+    echo "[MFP] On the network: $scheme://$ip:$port"
 done
 echo "[MFP] Stop the server: Ctrl+C"
 echo

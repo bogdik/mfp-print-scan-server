@@ -19,6 +19,7 @@ from starlette.requests import Request
 from . import auth
 from .config import settings
 from .i18n import COOKIE as LANG_COOKIE, LANGS, current_lang, js_messages, pick_lang, t
+from .ipp.mdns import MdnsAnnouncer
 from .ipp.printer import IppPrinter, is_supported as ipp_supported
 from .models import JobOut, JobStatus, OptionChoiceOut, PreviewOut, PrinterOptionOut, PrinterOut
 from .preview import PreviewUnavailable, render_preview
@@ -41,13 +42,19 @@ CHUNK_SIZE = 1024 * 1024
 
 backend = get_backend()
 ipp_printer = IppPrinter(backend, UPLOAD_DIR) if ipp_supported() else None
+mdns_announcer = MdnsAnnouncer() if ipp_printer and settings.mdns and settings.ipp_port else None
+WEB_SCHEME = "https" if settings.ssl_certfile and settings.ssl_keyfile else "http"
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     if ipp_printer:
         ipp_printer.warm_up()
+    if mdns_announcer:
+        mdns_announcer.start(ipp_printer, settings.ipp_port, WEB_PORT)
     yield
+    if mdns_announcer:
+        mdns_announcer.stop()
 
 
 app = FastAPI(title="MFP Print & Scan Server", lifespan=lifespan)
@@ -369,7 +376,7 @@ async def ipp_endpoint(request: Request):
         raise HTTPException(status_code=415, detail=t("err.expect_ipp"))
     host = request.headers.get("host") or f"{request.url.hostname}:{request.url.port}"
     printer_uri = f"ipp://{host}{request.url.path.rstrip('/')}"
-    more_info = f"http://{host.rsplit(':', 1)[0]}:{WEB_PORT}/"
+    more_info = f"{WEB_SCHEME}://{host.rsplit(':', 1)[0]}:{WEB_PORT}/"
     body = await request.body()
     response = await run_in_threadpool(ipp_printer.handle, body, printer_uri, more_info)
     return Response(content=response, media_type="application/ipp")

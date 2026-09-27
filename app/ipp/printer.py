@@ -119,6 +119,13 @@ class Job:
     completed: float | None = None
 
 
+def _printer_uuid(printer_name: str) -> uuid.UUID:
+    """Stable per-installation, per-printer UUID — used in both the IPP
+    printer-uuid attribute and the mDNS TXT record, which must agree for a
+    client to recognize them as the same device."""
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"mfp-print-scan-server:{socket.gethostname()}:{printer_name}")
+
+
 def _pwg_media_name(info: MediaInfo) -> str:
     for keyword, w, h in KNOWN_MEDIA:
         # Drivers round sizes to whole mm (13x19" = 330.2x482.6 comes as 329x483).
@@ -240,6 +247,10 @@ class IppPrinter:
             duplex="duplex" in options,
         )
 
+    def printer_uuid(self) -> uuid.UUID:
+        """Same UUID GetPrinterAttributes reports — for the mDNS TXT record."""
+        return _printer_uuid(self.capabilities().printer_name)
+
     def warm_up(self) -> None:
         """Builds capabilities in the background so the first client request
         doesn't wait for the driver queries."""
@@ -318,7 +329,7 @@ class IppPrinter:
         with self._jobs_lock:
             active = sum(1 for j in self._jobs.values() if j.state not in JOB_TERMINAL)
         up = int(time.time() - START_TIME) or 1
-        printer_uuid = uuid.uuid5(uuid.NAMESPACE_URL, f"mfp-print-scan-server:{socket.gethostname()}:{caps.printer_name}")
+        printer_uuid = _printer_uuid(caps.printer_name)
         margins = lambda side: sorted({round(getattr(m.info, f"margin_{side}") * 100) for m in caps.media})
         resolutions = [(300, 300, 3), (600, 600, 3)]
         mfg, _, mdl = caps.make_and_model.partition(" ")

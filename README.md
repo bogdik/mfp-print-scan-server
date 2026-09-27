@@ -73,6 +73,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 - The server is an IPP/2.0 printer on port 631 (`ipp://<host>:631/ipp/print`).
 - Clients render documents themselves and send **PDF, PWG Raster or JPEG**, sized to the media and margins the server advertises. The server prints them 1:1.
 - Capabilities come from the real driver: 20+ paper sizes with standard PWG names and real margins, paper types, color, duplex, quality.
+- **Bonjour/mDNS announcement** (Windows, `mdns = yes` by default): macOS, iOS and Android find the printer by name in "Add Printer" instead of needing its address typed in.
 - Tested with Linux/CUPS clients (text editor, LibreOffice, PDFs, photos).
 
 ### Scanning
@@ -89,6 +90,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 
 ### Other
 - Optional **sign-in** (`auth = yes` in `config.ini`): users and passwords (hashed or plain) in the config, remembered sessions, brute-force lockout, HTTP Basic for scripts, optional Basic auth for IPP.
+- Optional **HTTPS for the web UI**: point `ssl_certfile` / `ssl_keyfile` in `config.ini` at a certificate and key, and the web port serves TLS instead of plain HTTP — no reverse proxy needed if you already have a certificate (e.g. from your router, a LAN CA, or `mkcert`).
 - One **config file** (`config.ini`) for language, ports, folders and users.
 - **English / Russian** UI with a remembered choice; server messages follow the page language.
 - **Remembered print/scan settings**: the last printer, copies, per-printer options, and the last scanner, area, mode, resolution, brightness/contrast and format are kept in a cookie in your browser (not on the server) and pre-filled next time.
@@ -104,6 +106,8 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 | Canon PIXMA MG2541 (driver "Canon MG2500 series Printer", USB) | ✅ printing (PDF, images, text), WIA scanning |
 | Linux client (CUPS, driverless IPP Everywhere) → this server | ✅ printing from GNOME Text Editor, LibreOffice, PDF viewer |
 | Windows client with "Microsoft IPP Class Driver" | ⚠️ implemented per spec, not yet confirmed on a real client |
+| Bonjour/mDNS advertisement (`zeroconf`) | ⚠️ TXT record verified correct with `avahi-browse` against a stand-in printer object on Linux; not yet run for real on Windows, and no macOS/iOS/Android device has tried discovering it |
+| HTTPS for the web UI (`ssl_certfile`/`ssl_keyfile`) | ✅ tested on Linux: serves TLS only on the web port, falls back to plain HTTP cleanly if only one of the two is set |
 | Linux server (CUPS printing) | ✅ printing was tested at the start of the project |
 | Linux server — SANE scanning (preview, area select, color/gray/lineart, JPEG/PNG/TIFF/PDF, merge to PDF) | ✅ tested end-to-end against a real Canon PIXMA MG2500 over `scanimage` |
 | Linux server — print preview (PDF/image rendering, margins) | ✅ tested; exact hardware margins aren't available on Linux (falls back to A4 + 5 mm) |
@@ -141,11 +145,12 @@ Stop it with <kbd>Ctrl</kbd>+<kbd>C</kbd> or by closing the window.
 
 **Start automatically:** to run it in the background from Windows startup, see [Running as a service](#running-as-a-service).
 
-**Allow access from other devices:** Windows asks about the firewall the first time Python listens on the network; allow it for private networks. For IPP clients, also open port 631 (in an elevated PowerShell):
+**Allow access from other devices:** Windows asks about the firewall the first time Python listens on the network; allow it for private networks. For IPP clients, also open port 631, and UDP 5353 for Bonjour/mDNS discovery to work (in an elevated PowerShell):
 
 ```powershell
 New-NetFirewallRule -DisplayName "MFP Print & Scan Server (IPP)" -Direction Inbound -Protocol TCP -LocalPort 631 -Action Allow
 New-NetFirewallRule -DisplayName "MFP Print & Scan Server (Web)" -Direction Inbound -Protocol TCP -LocalPort 8000 -Action Allow
+New-NetFirewallRule -DisplayName "MFP Print & Scan Server (mDNS)" -Direction Inbound -Protocol UDP -LocalPort 5353 -Action Allow
 ```
 
 > **Tip.** On Windows 10/11, "Let Windows manage my default printer" makes the most recently used printer the default one. If you want the server's default to stay on your MFP, turn it off in *Settings → Devices → Printers & scanners*.
@@ -268,7 +273,7 @@ Or in *Settings → Printers → Add*, or at `http://localhost:631/admin`: enter
 
 Windows picks the **Microsoft IPP Class Driver** by itself.
 
-**macOS / iOS / Android.** They discover printers via Bonjour (mDNS), which isn't implemented yet (see [Known limitations](#known-limitations)). macOS can add the printer manually: *System Settings → Printers → Add → IP*, protocol "IPP", address `192.168.1.20`, queue `ipp/print`.
+**macOS / iOS / Android.** With `mdns = yes` (the default, Windows only — see [Configuration](#configuration)) the server advertises itself over Bonjour/mDNS, so "Add Printer" finds it by name, no address needed. Without it (or on Linux, where the OS's own IPP server handles sharing instead), add it manually the same way as above: macOS *System Settings → Printers → Add → IP*, protocol "IPP", address `192.168.1.20`, queue `ipp/print`.
 
 What the server advertises is built from the real printer driver: paper sizes with their hardware margins, paper types, color, duplex, quality, and 300/600 dpi for raster clients. Jobs are printed page = sheet, so the margins the client laid out are exactly where they end up on paper.
 
@@ -313,6 +318,9 @@ defaultlang = en
 port = 8000
 ipp_port = 631
 ipp_printer =
+mdns = yes
+ssl_certfile =
+ssl_keyfile =
 data_dir = data
 scans_dir = scans
 auth = none
@@ -329,6 +337,8 @@ session_days = 30
 | `port` | `8000` | web UI / API port | `MFP_PORT` |
 | `ipp_port` | `631` | IPP printer port (Windows only); `0` disables IPP | `MFP_IPP_PORT` |
 | `ipp_printer` | *(empty)* | which printer the IPP endpoint prints to; empty = the OS default printer. By default virtual printers (PDF, XPS, Fax) and IPP printers pointing back at this server are skipped | `MFP_IPP_PRINTER` |
+| `mdns` | `yes` | advertise the IPP printer via Bonjour/mDNS (Windows only); `no` disables it | `MFP_MDNS` |
+| `ssl_certfile`, `ssl_keyfile` | *(empty)* | certificate/key (PEM) for HTTPS on the web port; both must be set to enable it, see [Security](#security) | `MFP_SSL_CERTFILE`, `MFP_SSL_KEYFILE` |
 | `data_dir` | `data` | job history and the session signing key; relative paths are from the project folder | `MFP_DATA_DIR` |
 | `scans_dir` | `scans` | where scans are stored | `MFP_SCANS_DIR` |
 | `auth` | `none` | `none`: open to everyone on the network; `yes`: sign-in required, see [Users and sign-in](#users-and-sign-in) | `MFP_AUTH` |
@@ -441,6 +451,7 @@ app/
   ipp/
     protocol.py        IPP binary encoding
     printer.py         IPP Everywhere printer
+    mdns.py            Bonjour/mDNS advertisement (Windows)
   scanning/
     base.py            ScanBackend interface
     windows_wia.py     WIA backend
@@ -509,10 +520,17 @@ None of these are committed to git (see `.gitignore`).
 **By default (`auth = none`) there is no sign-in.** Anyone who can reach the ports can print, scan, and see or delete history and scans. Turn on [`auth = yes`](#users-and-sign-in) if other people share your network.
 
 Even with sign-in, the server is meant for a LAN:
-- it speaks plain **HTTP**, so passwords and cookies aren't encrypted on the network;
+- by default it speaks plain **HTTP**, so passwords and cookies aren't encrypted on the network unless you set `ssl_certfile`/`ssl_keyfile` (below);
 - **don't** forward ports 8000/631 from your router, and don't expose the server to the internet.
 
-For remote access use a VPN, or a reverse proxy with HTTPS in front of it.
+**HTTPS for the web UI.** Set both in `config.ini`:
+```ini
+ssl_certfile = /path/to/fullchain.pem
+ssl_keyfile = /path/to/privkey.pem
+```
+Restart the server — the web port then serves HTTPS only (plain HTTP requests to it fail; the IPP port stays HTTP, IPP-over-TLS isn't implemented). Paths are relative to the project folder if not absolute. A self-signed certificate works (browsers just warn once); for a certificate no browser warns about, use your router's if it issues one for your LAN domain, a local CA (e.g. [mkcert](https://github.com/FiloSottile/mkcert)), or one from a service that supports your setup.
+
+For remote access (outside your LAN) use a VPN, or a reverse proxy in front of the server.
 
 Other notes:
 - uploaded files are limited to 100 MB;
@@ -599,13 +617,13 @@ python run.py
 `MFP_RELOAD=1` serves only the web port and reloads on changes in `app/`. On Windows, uvicorn's reloader occasionally keeps the old worker running; restart manually if changes don't show up.
 
 Stack:
-- **backend**: FastAPI, uvicorn, pywin32, pypdfium2, Pillow;
+- **backend**: FastAPI, uvicorn, pywin32, pypdfium2, Pillow, zeroconf;
 - **frontend**: plain HTML/CSS/JS, no build step.
 
 ## Known limitations
 
-- **Plain HTTP only.** Even with sign-in, meant for a LAN; use a reverse proxy for HTTPS, see [Security](#security).
-- **No Bonjour/mDNS** announcement yet. IPP clients add the printer by address; iOS/Android can't auto-discover it.
+- **Plain HTTP by default.** Set `ssl_certfile`/`ssl_keyfile` in `config.ini` for HTTPS (see [Security](#security)), or use a reverse proxy — either way it's still meant for a LAN, not the open internet.
+- **Bonjour/mDNS** advertises the IPP printer on Windows only, matching where the IPP server itself runs; on Linux, share it through CUPS instead (which does its own mDNS via Avahi).
 - **No AirPrint (URF raster)**, so iPhones can't print to it directly yet.
 - **No OCR** for scans.
 - **Documents without LibreOffice** are printed by whatever program is registered for them, with no preview; install LibreOffice for exact results.

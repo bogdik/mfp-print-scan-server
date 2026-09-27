@@ -16,6 +16,14 @@ WEB_PORT = settings.port
 IPP_PORT = settings.ipp_port if platform.system() == "Windows" else 0
 LOG_MAX_BYTES = 5 * 1024 * 1024
 
+# HTTPS for the web UI only (ssl_certfile/ssl_keyfile in config.ini) — the
+# IPP port stays plain HTTP, IPP-over-TLS isn't implemented.
+WEB_SSL_KWARGS = (
+    {"ssl_certfile": str(settings.ssl_certfile), "ssl_keyfile": str(settings.ssl_keyfile)}
+    if settings.ssl_certfile and settings.ssl_keyfile
+    else {}
+)
+
 
 def log_to_file(path: Path) -> None:
     """Sends all output (uvicorn's log, tracebacks) to a file — for running
@@ -31,7 +39,7 @@ def log_to_file(path: Path) -> None:
 async def serve_both():
     from app.main import app
 
-    servers = [uvicorn.Server(uvicorn.Config(app, host=HOST, port=WEB_PORT))]
+    servers = [uvicorn.Server(uvicorn.Config(app, host=HOST, port=WEB_PORT, **WEB_SSL_KWARGS))]
     if IPP_PORT:
         servers.append(uvicorn.Server(uvicorn.Config(app, host=HOST, port=IPP_PORT)))
     await asyncio.gather(*(s.serve() for s in servers))
@@ -61,6 +69,6 @@ if __name__ == "__main__":
     # opt-in via MFP_RELOAD=1, watches only the app package and serves the
     # web UI only (no IPP port).
     if os.environ.get("MFP_RELOAD") == "1":
-        uvicorn.run("app.main:app", host=HOST, port=WEB_PORT, reload=True, reload_dirs=["app"])
+        uvicorn.run("app.main:app", host=HOST, port=WEB_PORT, reload=True, reload_dirs=["app"], **WEB_SSL_KWARGS)
     else:
         asyncio.run(serve_both())

@@ -40,6 +40,9 @@ class Settings:
     port: int = 8000
     ipp_port: int = 631
     ipp_printer: str = ""  # empty = OS default printer
+    mdns: bool = True  # advertise the IPP printer via Bonjour (Windows only)
+    ssl_certfile: Path | None = None  # both set = the web UI serves HTTPS instead of HTTP
+    ssl_keyfile: Path | None = None
     data_dir: Path = ROOT / "data"
     scans_dir: Path = ROOT / "scans"
     auth: bool = False
@@ -78,12 +81,22 @@ def load() -> Settings:
         p = Path(value)
         return p if p.is_absolute() else ROOT / p
 
+    def opt_path(key: str, env: str) -> Path | None:
+        value = get(key, env, "")
+        if not value:
+            return None
+        p = Path(value)
+        return p if p.is_absolute() else ROOT / p
+
     lang = get("defaultlang", "MFP_LANG", "en").lower()
     settings = Settings(
         defaultlang=lang if lang in ("auto", "ru", "en") else "en",
         port=int(get("port", "MFP_PORT", "8000")),
         ipp_port=int(get("ipp_port", "MFP_IPP_PORT", "631")),
         ipp_printer=get("ipp_printer", "MFP_IPP_PRINTER", ""),
+        mdns=_bool(get("mdns", "MFP_MDNS", "yes")),
+        ssl_certfile=opt_path("ssl_certfile", "MFP_SSL_CERTFILE"),
+        ssl_keyfile=opt_path("ssl_keyfile", "MFP_SSL_KEYFILE"),
         data_dir=path("data_dir", "MFP_DATA_DIR", ROOT / "data"),
         scans_dir=path("scans_dir", "MFP_SCANS_DIR", ROOT / "scans"),
         auth=_bool(get("auth", "MFP_AUTH", "none")),
@@ -91,6 +104,10 @@ def load() -> Settings:
         session_days=int(get("session_days", "MFP_SESSION_DAYS", "30")),
         users={name: pw.strip() for name, pw in parser["users"].items()} if parser.has_section("users") else {},
     )
+    if bool(settings.ssl_certfile) != bool(settings.ssl_keyfile):
+        logger.error("Both ssl_certfile and ssl_keyfile must be set to enable HTTPS in %s — "
+                      "ignoring, serving plain HTTP", CONFIG_PATH.name)
+        settings.ssl_certfile = settings.ssl_keyfile = None
     if settings.auth and not settings.users:
         logger.error("auth = yes but [users] is empty in %s — nobody will be able to log in", CONFIG_PATH)
     plain = [name for name, pw in settings.users.items() if not pw.startswith(HASH_PREFIX + "$")]

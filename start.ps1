@@ -38,14 +38,17 @@ if ($current -ne $installed) {
 }
 if ($SetupOnly) { exit 0 }
 
-# Ports as the server will see them: config.ini, overridden by MFP_* variables.
-$port, $ippPort = (& $python -c "from app.config import settings; print(settings.port, settings.ipp_port)") -split ' '
+# Ports/scheme as the server will see them: config.ini, overridden by MFP_* variables.
+$port, $ippPort, $scheme = (& $python -c "
+from app.config import settings
+print(settings.port, settings.ipp_port, 'https' if settings.ssl_certfile and settings.ssl_keyfile else 'http')
+") -split ' '
 Write-Host ''
-Write-Host "[MFP] Web UI:         http://localhost:$port" -ForegroundColor Green
+Write-Host "[MFP] Web UI:         ${scheme}://localhost:$port" -ForegroundColor Green
 Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
     Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
     ForEach-Object {
-        $line = "[MFP] On the network: http://$($_.IPAddress):$port"
+        $line = "[MFP] On the network: ${scheme}://$($_.IPAddress):$port"
         if ($ippPort -ne '0') { $line += "   IPP printer: ipp://$($_.IPAddress):$ippPort/ipp/print" }
         Write-Host $line
     }
