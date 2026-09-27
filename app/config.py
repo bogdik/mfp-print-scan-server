@@ -40,13 +40,16 @@ class Settings:
     port: int = 8000
     ipp_port: int = 631
     ipp_printer: str = ""  # empty = OS default printer
-    mdns: bool = True  # advertise the IPP printer via Bonjour (Windows only)
+    mdns: bool = True  # advertise the IPP printer and/or eSCL scanner via Bonjour
+    escl: bool = True  # AirScan/eSCL scanning endpoint (Windows and Linux)
+    escl_scanner: str = ""  # empty = the scan backend's first scanner
     ssl_certfile: Path | None = None  # both set = the web UI serves HTTPS instead of HTTP
     ssl_keyfile: Path | None = None
     data_dir: Path = ROOT / "data"
     scans_dir: Path = ROOT / "scans"
     auth: bool = False
     ipp_auth: bool = False
+    escl_auth: bool = False
     session_days: int = 30
     users: dict[str, str] = field(default_factory=dict)  # name -> password or pbkdf2 hash
 
@@ -95,12 +98,15 @@ def load() -> Settings:
         ipp_port=int(get("ipp_port", "MFP_IPP_PORT", "631")),
         ipp_printer=get("ipp_printer", "MFP_IPP_PRINTER", ""),
         mdns=_bool(get("mdns", "MFP_MDNS", "yes")),
+        escl=_bool(get("escl", "MFP_ESCL", "yes")),
+        escl_scanner=get("escl_scanner", "MFP_ESCL_SCANNER", ""),
         ssl_certfile=opt_path("ssl_certfile", "MFP_SSL_CERTFILE"),
         ssl_keyfile=opt_path("ssl_keyfile", "MFP_SSL_KEYFILE"),
         data_dir=path("data_dir", "MFP_DATA_DIR", ROOT / "data"),
         scans_dir=path("scans_dir", "MFP_SCANS_DIR", ROOT / "scans"),
         auth=_bool(get("auth", "MFP_AUTH", "none")),
         ipp_auth=_bool(get("ipp_auth", "MFP_IPP_AUTH", "no")),
+        escl_auth=_bool(get("escl_auth", "MFP_ESCL_AUTH", "no")),
         session_days=int(get("session_days", "MFP_SESSION_DAYS", "30")),
         users={name: pw.strip() for name, pw in parser["users"].items()} if parser.has_section("users") else {},
     )

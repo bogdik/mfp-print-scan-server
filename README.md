@@ -7,6 +7,7 @@ A small self-hosted web server that turns a USB printer/scanner (MFP, multifunct
 - **print** any PDF or image from a browser — on a phone, tablet or another computer — with a real print preview;
 - **add it as a network printer** on other machines: the server speaks **IPP Everywhere**, so Windows, Linux (CUPS), macOS, Android and iOS clients use their **built-in driverless driver**. You don't need the printer's own driver on each client;
 - **scan** from the browser like [phpSane](https://github.com/gawindx/phpSane): preview the glass, select an area, pick resolution/mode/format, merge pages into one PDF, or make a **copy** at actual size;
+- **add it as a network scanner** too: the server also speaks **AirScan (eSCL)**, so macOS, iOS and Android scan with their own built-in scanning, no app needed;
 - **maintain** the printer: OS test page, and for Canon PIXMA — nozzle check and print-head cleaning.
 
 It runs on **Windows** (Win32 print spooler + WIA) and **Linux** (CUPS + SANE). The UI is in **English and Russian**.
@@ -36,6 +37,7 @@ It runs on **Windows** (Win32 print spooler + WIA) and **Linux** (CUPS + SANE). 
   - [Printing from the browser](#printing-from-the-browser)
   - [Adding it as a network printer (IPP)](#adding-it-as-a-network-printer-ipp)
   - [Scanning and copying](#scanning-and-copying)
+  - [Scanning from another device (AirScan/eSCL)](#scanning-from-another-device-airscanescl)
   - [Printer maintenance](#printer-maintenance)
   - [Language](#language)
 - [Configuration](#configuration)
@@ -57,7 +59,8 @@ It runs on **Windows** (Win32 print spooler + WIA) and **Linux** (CUPS + SANE). 
 Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi‑Fi, no network printing, no scanning from a phone. Sharing them the Windows way needs a vendor driver on every PC and doesn't help phones at all. This project puts one always-on machine next to the printer and makes the printer available to everything on the LAN:
 
 - anything with a browser can print and scan;
-- anything with an IPP client (all modern OSes) can print with its built-in driver.
+- anything with an IPP client (all modern OSes) can print with its built-in driver;
+- anything with an eSCL/AirScan client (macOS, iOS, Android) can scan the same way.
 
 ## Features
 
@@ -83,6 +86,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 - Save as **JPEG, PNG, TIFF or PDF** (correct DPI stored in the file).
 - Gallery of scans: open, download, delete, **merge selected scans into one multi-page PDF** (in the order you tick them).
 - **Copy**: print a scan at its real physical size (a scanned business card prints as a business card, not blown up to A4).
+- **AirScan/eSCL**: the scanner is also a driverless network scanner (`escl = yes`, on **both** Windows and Linux) — macOS "Image Capture", iOS's built-in scan and Android scan directly, no app or this web UI needed. Bonjour-discoverable like the printer.
 
 ### Maintenance
 - **Test page**: the operating system's standard test page, for any printer.
@@ -108,6 +112,9 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 | Windows client with "Microsoft IPP Class Driver" | ⚠️ implemented per spec, not yet confirmed on a real client |
 | Bonjour/mDNS advertisement (`zeroconf`) | ⚠️ TXT record verified correct with `avahi-browse` against a stand-in printer object on Linux; not yet run for real on Windows, and no macOS/iOS/Android device has tried discovering it |
 | HTTPS for the web UI (`ssl_certfile`/`ssl_keyfile`) | ✅ tested on Linux: serves TLS only on the web port, falls back to plain HTTP cleanly if only one of the two is set |
+| AirScan/eSCL server (Linux, real Canon PIXMA MG2500) | ✅ ScannerCapabilities/ScannerStatus/ScanJobs/NextDocument all tested against real hardware: correct bed size and formats reported, a real scan came back as PDF and as grayscale JPEG with the requested region cropped correctly (verified pixel size and content); mDNS advertisement seen by `avahi-browse` **and independently picked up by SANE's own `escl`/`airscan` client backends** on the same machine, with a matching UUID. That self-discovery also surfaced and let us fix a real bug: it made `scanimage -L` ~12x slower and occasionally hit a transient "device busy" — see "A Linux quirk this surfaced" in [How it works](#how-it-works) |
+| AirScan/eSCL server (Windows) | ⚠️ not yet run on a real Windows machine |
+| AirScan/eSCL discovery from a real macOS/iOS/Android device | ⚠️ not yet tried — only verified via `avahi-browse` and SANE's own eSCL client, not Apple's/Google's actual client software |
 | Linux server (CUPS printing) | ✅ printing was tested at the start of the project |
 | Linux server — SANE scanning (preview, area select, color/gray/lineart, JPEG/PNG/TIFF/PDF, merge to PDF) | ✅ tested end-to-end against a real Canon PIXMA MG2500 over `scanimage` |
 | Linux server — print preview (PDF/image rendering, margins) | ✅ tested; exact hardware margins aren't available on Linux (falls back to A4 + 5 mm) |
@@ -289,6 +296,16 @@ In the gallery:
 - tick scans and press **Merge selected into PDF**; pages go in the order you ticked them;
 - **Print** makes a copy at actual size on the printer selected on the Print tab.
 
+### Scanning from another device (AirScan/eSCL)
+
+With `escl = yes` (the default, Windows and Linux) the scanner is also available as a driverless network scanner — no app or this web UI needed:
+
+- **macOS**: *System Settings → Printers & Scanners* (or the Image Capture app) should list it automatically once discovered via Bonjour; scan from there directly.
+- **iOS**: the Files app's *Scan Documents*, and many other apps' "scan" buttons, look for AirScan-compatible scanners on the network automatically.
+- **Android**: apps that support "network scan" / eSCL discovery (many scanning apps do) find it the same way.
+
+Discovery needs `mdns = yes` (the default); without it, a client that lets you enter an address directly can use `http://<server>:8000/eSCL/` as the eSCL root. Only one scanner is exposed this way — set `escl_scanner` in `config.ini` if the backend reports more than one and the wrong one gets picked.
+
 ### Printer maintenance
 
 Below the print button there's a **Maintenance** row for the selected printer:
@@ -319,12 +336,15 @@ port = 8000
 ipp_port = 631
 ipp_printer =
 mdns = yes
+escl = yes
+escl_scanner =
 ssl_certfile =
 ssl_keyfile =
 data_dir = data
 scans_dir = scans
 auth = none
 ipp_auth = no
+escl_auth = no
 session_days = 30
 
 [users]
@@ -337,12 +357,15 @@ session_days = 30
 | `port` | `8000` | web UI / API port | `MFP_PORT` |
 | `ipp_port` | `631` | IPP printer port (Windows only); `0` disables IPP | `MFP_IPP_PORT` |
 | `ipp_printer` | *(empty)* | which printer the IPP endpoint prints to; empty = the OS default printer. By default virtual printers (PDF, XPS, Fax) and IPP printers pointing back at this server are skipped | `MFP_IPP_PRINTER` |
-| `mdns` | `yes` | advertise the IPP printer via Bonjour/mDNS (Windows only); `no` disables it | `MFP_MDNS` |
+| `mdns` | `yes` | advertise the IPP printer and/or eSCL scanner via Bonjour/mDNS (IPP: Windows only; eSCL: both OSes); `no` disables it | `MFP_MDNS` |
+| `escl` | `yes` | AirScan/eSCL scanning endpoint at `/eSCL/*` (Windows and Linux); `no` disables it | `MFP_ESCL` |
+| `escl_scanner` | *(empty)* | which scanner the eSCL endpoint serves; empty = the scan backend's first one | `MFP_ESCL_SCANNER` |
 | `ssl_certfile`, `ssl_keyfile` | *(empty)* | certificate/key (PEM) for HTTPS on the web port; both must be set to enable it, see [Security](#security) | `MFP_SSL_CERTFILE`, `MFP_SSL_KEYFILE` |
 | `data_dir` | `data` | job history and the session signing key; relative paths are from the project folder | `MFP_DATA_DIR` |
 | `scans_dir` | `scans` | where scans are stored | `MFP_SCANS_DIR` |
 | `auth` | `none` | `none`: open to everyone on the network; `yes`: sign-in required, see [Users and sign-in](#users-and-sign-in) | `MFP_AUTH` |
 | `ipp_auth` | `no` | `yes`: IPP printing also requires a user name and password (HTTP Basic) | `MFP_IPP_AUTH` |
+| `escl_auth` | `no` | `yes`: eSCL scanning also requires a user name and password (HTTP Basic) | `MFP_ESCL_AUTH` |
 | `session_days` | `30` | how long "Remember me" keeps you signed in | `MFP_SESSION_DAYS` |
 
 Environment variables override the file. That's handy for one-off runs, e.g. `$env:MFP_PORT = "8080"; .\start.ps1`. Two more variables:
@@ -384,7 +407,9 @@ It asks for the password twice and prints a line like `pbkdf2_sha256$390000$...`
 - CUPS asks for the name and password, or they can be put into the URI: `ipp://anna:password@server:631/ipp/print`;
 - Windows' built-in IPP driver and phones often can't send a password, so turn this on only if your clients support it.
 
-Leave `auth = none` (the default) on a trusted home network where everyone may print.
+**eSCL scanning** works the same way via `escl_auth`: `auth = yes` alone leaves `/eSCL/*` open, and macOS/iOS/Android's built-in scanning generally can't send a password either, so it's off by default.
+
+Leave `auth = none` (the default) on a trusted home network where everyone may print and scan.
 
 ## How it works
 
@@ -392,16 +417,19 @@ Leave `auth = none` (the default) on a trusted home network where everyone may p
 flowchart LR
     Browser["Browser<br/>(PC / phone)"] -- "HTTP :8000<br/>upload, preview, scan" --> Web
     Client["IPP client<br/>(Windows / CUPS / macOS)"] -- "IPP :631<br/>PDF · PWG Raster · JPEG" --> IPP
+    Scan["eSCL client<br/>(macOS / iOS / Android)"] -- "HTTP :8000/eSCL<br/>ScanJobs · NextDocument" --> ESCL
 
     subgraph Server["MFP Print & Scan Server (FastAPI)"]
         Web["Web UI + REST API"]
         IPP["IPP Everywhere printer"]
+        ESCL["eSCL (AirScan) server"]
         Layout["Shared page layout<br/>(fit / sheet / actual size)"]
         PB["Print backend"]
         SB["Scan backend"]
         Web --> PB
         IPP --> PB
         Web --> SB
+        ESCL --> SB
         PB --- Layout
     end
 
@@ -429,12 +457,18 @@ Other formats go through the `printto` shell verb. In that case the options are 
 - Windows: WIA through COM, on one dedicated thread, since COM objects are apartment-bound and a flatbed does one scan at a time.
 - Linux: `scanimage`; options are parsed from `scanimage --all-options`.
 
+**eSCL.** `app/escl/` implements the AirScan/eSCL HTTP+XML API on top of the same `ScanBackend` — the web UI's `/api/scan*` routes and the eSCL server share one backend instance, so its busy-lock actually serializes the physical scanner between a browser and a phone. `POST /eSCL/ScanJobs` returns immediately (a background thread does the scan); `GET .../NextDocument` blocks until it's done, then streams the image once. eSCL/Bonjour model one scanner per announced service, so `escl_scanner` in `config.ini` picks which one if the backend reports more than one (empty = the first).
+
+**A Linux quirk this surfaced.** On a Linux machine with `sane-airscan`/`escl` installed (common on Ubuntu), turning on this server's own eSCL announcement means the machine's own SANE now discovers *itself* as a network scanner over Bonjour — so `scanimage -L` (used internally to list scanners) starts taking ~12s for its network-discovery timeout instead of ~1s, and can occasionally hit "device busy" if that self-discovery probes the real USB scanner at the same moment this server's own capabilities/scan calls do. `linux_sane.py` caches `list_scanners()` (never caching an empty result, so a real disconnect is still noticed promptly) and retries a couple of times on a transient open failure for the lightweight list/capabilities calls — not for an actual scan. Harmless duplicate entries for the same physical scanner (`pixma:...`, `escl:http://...`, `airscan:...`) can still show up in `/api/scanners`' list on such a machine; picking one of the network ones just adds a pointless network round trip back to this same server, not a bug, since a printer/scanner behind a genuine network hop wouldn't have this self-reference at all.
+
 ### Project layout
 
 ```
 app/
   main.py              FastAPI app: pages, print/preview/jobs/maintenance API, IPP endpoint
-  scan_routes.py       scanning API
+  scan_routes.py       scanning API (web UI)
+  escl_routes.py       eSCL (AirScan) HTTP endpoints
+  mdns_util.py         shared zeroconf plumbing for ipp/mdns.py and escl/mdns.py
   i18n.py              all UI and server texts (ru/en)
   preview.py           print preview rendering
   storage.py           job history (JSON, atomic writes)
@@ -457,6 +491,10 @@ app/
     windows_wia.py     WIA backend
     linux_sane.py      SANE backend
     store.py           saved scans, thumbnails, PDF merge
+  escl/
+    protocol.py        eSCL XML: capabilities/status build, ScanSettings parse
+    server.py          target scanner, job lifecycle, image encoding
+    mdns.py            Bonjour/mDNS advertisement (Windows and Linux)
   templates/index.html
   static/              app.js (print tab), scan.js (scan tab), style.css
 run.py                 starts the web (8000) and IPP (631) servers; --log-file for background use
@@ -491,6 +529,10 @@ The UI is a thin client over a JSON API; interactive docs are at `http://<server
 | POST | `/api/scans/merge` | `{"names": [...]}` → one PDF |
 | POST | `/api/scans/{name}/print` | print a scan at actual size |
 | POST | `/ipp/print` (port 631) | IPP endpoint |
+| GET | `/eSCL/ScannerCapabilities` · `/eSCL/ScannerStatus` | eSCL (AirScan) capabilities/status, XML |
+| POST | `/eSCL/ScanJobs` | eSCL: create a scan job from a `ScanSettings` XML body → `Location` header |
+| GET | `/eSCL/ScanJobs/{id}/NextDocument` | eSCL: the scanned image (blocks until the scan is done) |
+| DELETE | `/eSCL/ScanJobs/{id}` | eSCL: cancel/discard a job |
 
 Example:
 
@@ -593,6 +635,8 @@ Install [LibreOffice](https://www.libreoffice.org/) on the server and restart it
 ## Extending
 
 **Another printer.** Install it in the OS: it appears in the list with the options its driver reports, and IPP advertises its real paper sizes and margins. No code changes are needed.
+
+**Another scanner.** Same story on the eSCL side: any scanner the backend (WIA/SANE) already lists works over AirScan too. If more than one is connected, set `escl_scanner` in `config.ini` to pick which one is served — eSCL/Bonjour only model one scanner per announced service.
 
 **Paper type ↔ size rules for a new model.** Add an entry to `RULES` in `app/printing/media_constraints.py`, keyed by driver name. Use the DEVMODE media/paper ids; you can list them with `DeviceCapabilities` (`DC_MEDIATYPES`, `DC_PAPERS`).
 

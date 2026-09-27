@@ -2,6 +2,7 @@ import io
 import re
 import subprocess
 import threading
+import time
 
 from ..i18n import t
 from .base import (
@@ -18,6 +19,15 @@ MODE_ALIASES = {
 }
 SCAN_TIMEOUT = 600
 
+# `scanimage -L` normally answers in ~1s, but if sane-airscan/escl are
+# installed (common on Ubuntu) it also probes the network for eSCL/AirScan
+# scanners and waits out a ~12s discovery timeout — including finding this
+# very server's own eSCL announcement, if escl/mdns are enabled. Caching
+# keeps repeat listings (the web UI's scanner dropdown, this server's own
+# eSCL endpoints resolving their target scanner) from paying that cost
+# every time.
+LIST_SCANNERS_TTL = 30
+
 
 def _scanimage(*args: str, binary: bool = False, timeout: int = 60):
     try:
@@ -31,29 +41,64 @@ def _scanimage(*args: str, binary: bool = False, timeout: int = 60):
     return result.stdout if binary else result.stdout.decode(errors="replace")
 
 
+def _scanimage_retry(*args: str, attempts: int = 3, delay: float = 1.5, **kwargs):
+    """Like _scanimage(), but for the lightweight probe calls (listing,
+    reading options) — never for an actual scan. SANE devices can
+    transiently fail to open ("Invalid argument") when another process
+    touches the same USB device at the same moment, including — on a
+    machine with sane-airscan/escl installed — this very server's own eSCL
+    announcement being re-discovered and queried by SANE's own network
+    backends. Retrying a couple of times clears it up in practice."""
+    last_exc: ScanError | None = None
+    for attempt in range(attempts):
+        try:
+            return _scanimage(*args, **kwargs)
+        except ScanError as exc:
+            last_exc = exc
+            if attempt < attempts - 1:
+                time.sleep(delay)
+    raise last_exc
+
+
 class SaneScanBackend(ScanBackend):
     """SANE via the `scanimage` CLI (package sane-utils). Options are read
     from `scanimage --all-options`, so any SANE-supported scanner works.
 
-    NOTE: written against scanimage's documented output format but not yet
-    run on a real Linux machine — the Windows (WIA) backend is the tested one."""
+    Confirmed on real hardware (Canon PIXMA MG2500 over the `pixma` SANE
+    backend): listing, capabilities, area/mode/resolution scanning, and
+    being served back out over this project's own eSCL endpoint."""
 
     def __init__(self):
         self._busy = threading.Lock()
         self._options: dict[str, dict[str, str]] = {}
+        self._scanners_cache: list[ScannerInfo] | None = None
+        self._scanners_cached_at = 0.0
+        self._scanners_lock = threading.Lock()
 
     def list_scanners(self) -> list[ScannerInfo]:
-        out = _scanimage("-L", timeout=30)
-        return [
-            ScannerInfo(id=m.group(1), name=m.group(2).strip())
-            for m in re.finditer(r"device `([^']+)' is an? (.+)", out)
-        ]
+        with self._scanners_lock:
+            if self._scanners_cache is not None and time.time() - self._scanners_cached_at < LIST_SCANNERS_TTL:
+                return self._scanners_cache
+            out = _scanimage_retry("-L", timeout=30)
+            scanners = [
+                ScannerInfo(id=m.group(1), name=m.group(2).strip())
+                for m in re.finditer(r"device `([^']+)' is an? (.+)", out)
+            ]
+            # Don't cache an empty result: a scanner genuinely being gone is
+            # rare and worth re-checking promptly, but a transient blip
+            # (e.g. two scanimage -L calls racing over the same USB probe)
+            # caching "no scanner" for the full TTL would be a false outage.
+            if scanners:
+                self._scanners_cache, self._scanners_cached_at = scanners, time.time()
+            else:
+                self._scanners_cache = None
+            return scanners
 
     def _read_options(self, scanner_id: str) -> dict[str, str]:
         """Option name -> its allowed-values spec, e.g. "resolution" ->
         "75|150|300|600dpi", "x" -> "0..216.069mm"."""
         if scanner_id not in self._options:
-            out = _scanimage("-d", scanner_id, "--all-options", timeout=60)
+            out = _scanimage_retry("-d", scanner_id, "--all-options", timeout=60)
             options = {}
             # Lines look like: "    --mode auto|Color|Gray|Lineart [Color]"
             #                  "    -l auto|0..216.069mm (in steps of 0.09) [0]"

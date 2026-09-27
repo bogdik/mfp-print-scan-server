@@ -14,8 +14,7 @@ from pydantic import BaseModel
 from .i18n import t
 from .models import JobOut, JobStatus
 from .printing.base import PrintBackend
-from .scanning.base import ScanError, ScannerBusy, ScanParams
-from .scanning.factory import get_scan_backend
+from .scanning.base import ScanBackend, ScanError, ScannerBusy, ScanParams
 from .scanning.store import FORMATS, ScanRecord, ScanStore
 from .storage import job_store
 
@@ -26,9 +25,11 @@ class MergeRequest(BaseModel):
     names: list[str]
 
 
-def create_router(print_backend: PrintBackend, scans_dir: Path) -> APIRouter:
+def create_router(print_backend: PrintBackend, scanner: ScanBackend, scans_dir: Path) -> APIRouter:
+    """`scanner` is shared with the eSCL server (escl/server.py) so both use
+    the same backend instance — its busy-lock then actually serializes the
+    physical scanner between the web UI and AirScan clients."""
     router = APIRouter(prefix="/api")
-    scanner = get_scan_backend()
     store = ScanStore(scans_dir)
 
     def scan_error(exc: ScanError):

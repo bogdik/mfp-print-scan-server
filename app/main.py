@@ -18,12 +18,16 @@ from starlette.requests import Request
 
 from . import auth
 from .config import settings
+from .escl.mdns import EsclMdnsAnnouncer
+from .escl.server import EsclScanner
+from .escl_routes import create_router as create_escl_router
 from .i18n import COOKIE as LANG_COOKIE, LANGS, current_lang, js_messages, pick_lang, t
 from .ipp.mdns import MdnsAnnouncer
 from .ipp.printer import IppPrinter, is_supported as ipp_supported
 from .models import JobOut, JobStatus, OptionChoiceOut, PreviewOut, PrinterOptionOut, PrinterOut
 from .preview import PreviewUnavailable, render_preview
 from .scan_routes import create_router as create_scan_router
+from .scanning.factory import get_scan_backend
 from .printing.base import PrintError
 from .printing.factory import get_backend
 from .printing.layout import DEFAULT_LAYOUT
@@ -41,8 +45,11 @@ MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 CHUNK_SIZE = 1024 * 1024
 
 backend = get_backend()
+scan_backend = get_scan_backend()
 ipp_printer = IppPrinter(backend, UPLOAD_DIR) if ipp_supported() else None
 mdns_announcer = MdnsAnnouncer() if ipp_printer and settings.mdns and settings.ipp_port else None
+escl_scanner = EsclScanner(scan_backend) if settings.escl else None
+escl_mdns = EsclMdnsAnnouncer() if escl_scanner and settings.mdns else None
 WEB_SCHEME = "https" if settings.ssl_certfile and settings.ssl_keyfile else "http"
 
 
@@ -52,9 +59,13 @@ async def lifespan(_: FastAPI):
         ipp_printer.warm_up()
     if mdns_announcer:
         mdns_announcer.start(ipp_printer, settings.ipp_port, WEB_PORT)
+    if escl_mdns:
+        escl_mdns.start(escl_scanner, WEB_PORT)
     yield
     if mdns_announcer:
         mdns_announcer.stop()
+    if escl_mdns:
+        escl_mdns.stop()
 
 
 app = FastAPI(title="MFP Print & Scan Server", lifespan=lifespan)
@@ -71,12 +82,15 @@ def static_url(path: str) -> str:
 templates.env.globals["static_url"] = static_url
 templates.env.globals["t"] = t
 
-app.include_router(create_scan_router(backend, settings.scans_dir))
+app.include_router(create_scan_router(backend, scan_backend, settings.scans_dir))
+if escl_scanner:
+    app.include_router(create_escl_router(escl_scanner, WEB_PORT))
 
 # Paths the IPP printer answers on (see ipp_endpoint). Trailing-slash
 # variants are listed explicitly: IPP clients don't follow the 307 redirect
 # FastAPI would answer them with.
 IPP_PATHS = ("/", "/ipp", "/ipp/", "/ipp/print", "/ipp/print/", "/ipp/printer", "/ipp/printer/")
+ESCL_PREFIX = "/eSCL/"
 PUBLIC_PREFIXES = ("/static/",)
 PUBLIC_PATHS = ("/login", "/logout", "/favicon.ico")
 
@@ -89,6 +103,10 @@ def _is_ipp(request: Request) -> bool:
     )
 
 
+def _is_escl(request: Request) -> bool:
+    return request.url.path.startswith(ESCL_PREFIX)
+
+
 def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "?"
 
@@ -98,16 +116,18 @@ def _client_ip(request: Request) -> str:
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     """With auth = yes, everything except the login page and static files
-    needs a session cookie or HTTP Basic credentials. IPP printing is
-    protected only with ipp_auth = yes (Basic, the way IPP clients log in)."""
+    needs a session cookie or HTTP Basic credentials. IPP printing and eSCL
+    scanning are protected only by their own ipp_auth/escl_auth = yes
+    (Basic, the way those clients log in — most can't show a login page)."""
     path = request.url.path
     ipp = _is_ipp(request)
-    protected = settings.ipp_auth if ipp else settings.auth
+    escl = _is_escl(request)
+    protected = settings.ipp_auth if ipp else settings.escl_auth if escl else settings.auth
     if not protected or path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES):
         return await call_next(request)
 
     ip = _client_ip(request)
-    user = None if ipp else auth.session_user(request.cookies.get(auth.SESSION_COOKIE))
+    user = None if (ipp or escl) else auth.session_user(request.cookies.get(auth.SESSION_COOKIE))
     header = request.headers.get("authorization")
     if user is None and header:
         if auth.is_locked(ip):
@@ -119,8 +139,8 @@ async def require_login(request: Request, call_next):
         request.state.user = user
         return await call_next(request)
 
-    if ipp:
-        # IPP clients ask the user for credentials when they see this.
+    if ipp or escl:
+        # These clients ask for credentials themselves when they see this.
         return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="MFP Print & Scan Server"'})
     if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
         target = path + (f"?{request.url.query}" if request.url.query else "")
