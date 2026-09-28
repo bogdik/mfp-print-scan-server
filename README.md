@@ -163,7 +163,9 @@ Stop it with <kbd>Ctrl</kbd>+<kbd>C</kbd> or by closing the window.
 
 **Start automatically:** to run it in the background from Windows startup, see [Running as a service](#running-as-a-service).
 
-**Allow access from other devices:** Windows asks about the firewall the first time Python listens on the network; allow it for private networks. For IPP clients, also open port 631, and UDP 5353 for Bonjour/mDNS discovery to work (in an elevated PowerShell):
+**Allow access from other devices:** Windows asks about the firewall the first time Python listens on the network; allow it for private networks. If you register the autostart task (below), `register_service.bat` opens everything it needs by itself — the web port, the IPP port if enabled, and UDP 5353 for Bonjour/mDNS (needed for AirPrint, AirScan/eSCL and "Add Printer" discovery to find the server at all; the ports above are what the actual print/scan traffic uses afterwards) if `mdns = yes`.
+
+Running it manually via `start.bat` instead (no autostart task) skips that step, so add the rules yourself if other devices need to reach it (in an elevated PowerShell):
 
 ```powershell
 New-NetFirewallRule -DisplayName "MFP Print & Scan Server (IPP)" -Direction Inbound -Protocol TCP -LocalPort 631 -Action Allow
@@ -204,14 +206,14 @@ Double-click **`register_service.bat`** and approve the administrator prompt. It
    - runs **as your user account without storing a password** (S4U logon), so it sees the same printers, printer settings and default printer as you;
    - restarts the server if it exits (every minute), with no run-time limit;
    - writes the log to **`logs\server.log`** (the previous log is kept as `server.log.1` once it passes 5 MB);
-3. opens TCP 8000 and 631 in Windows Firewall for private/domain networks, and warns if your network is marked *Public*;
+3. opens TCP for the web port (8000) and, if enabled, the IPP port (631) in Windows Firewall for private/domain networks, plus UDP 5353 for Bonjour/mDNS if `mdns = yes` (AirPrint, AirScan/eSCL and "Add Printer" discovery all need it to find the server, separately from the ports actual print/scan traffic uses) — and warns if your network is marked *Public*;
 4. starts the server right away and checks that it answers.
 
 Why a scheduled task and not a classic Windows service:
 - `python.exe` can't act as a service program;
 - a service running as SYSTEM wouldn't see your default printer and your per-user printer settings.
 
-If a `start.bat` window is still running, close it first, otherwise the ports are busy. Running the script again updates the task. Ports come from `config.ini`, so run the script again after changing them there: the firewall rules follow.
+If a `start.bat` window is still running, close it first, otherwise the ports are busy. Running the script again updates the task. Ports and `mdns` come from `config.ini`, so run the script again after changing them there: the firewall rules follow.
 
 Managing it afterwards:
 

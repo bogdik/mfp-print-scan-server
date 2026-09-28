@@ -9,7 +9,11 @@
 #     printers, settings and the default printer are the user's own;
 #   - restarts the server if it exits, with no run-time limit;
 #   - writes its log to logs\server.log.
-# It also opens the web and IPP ports in Windows Firewall (private/domain networks).
+# It also opens what's needed in Windows Firewall (private/domain networks):
+#   - TCP for the web port and, if enabled, the IPP port;
+#   - UDP 5353 (mDNS/Bonjour), if mdns = yes — needed for AirPrint, AirScan/eSCL
+#     and "Add Printer" discovery to find the server at all. The web/IPP ports
+#     above are still what the actual print/scan traffic uses afterwards.
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -46,9 +50,9 @@ try {
     }
     $python = Join-Path $root '.venv\Scripts\python.exe'
 
-    # Ports as the server will see them: config.ini, overridden by MFP_* variables.
-    $ports = (& $python -c "from app.config import settings; print(settings.port, settings.ipp_port)") -split ' '
-    $webPort, $ippPort = [int]$ports[0], [int]$ports[1]
+    # Ports/settings as the server will see them: config.ini, overridden by MFP_* variables.
+    $vals = (& $python -c "from app.config import settings; print(settings.port, settings.ipp_port, int(settings.mdns))") -split ' '
+    $webPort, $ippPort, $mdnsEnabled = [int]$vals[0], [int]$vals[1], [int]$vals[2]
 
     # 2. A server already running (start.bat window or an old task) would hold the ports.
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
@@ -84,12 +88,22 @@ try {
 
     # 4. Firewall: allow other devices on the local network.
     Get-NetFirewallRule -Group $FirewallGroup -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-    foreach ($rule in @(@{Name = 'Web'; Port = $webPort}, @{Name = 'IPP'; Port = $ippPort})) {
-        if ($rule.Port -eq 0) { continue }
-        New-NetFirewallRule -DisplayName "MFP Print & Scan Server ($($rule.Name))" -Group $FirewallGroup -Direction Inbound `
-            -Protocol TCP -LocalPort $rule.Port -Action Allow -Profile Private, Domain | Out-Null
+    $rules = @(
+        @{Name = 'Web'; Port = $webPort; Protocol = 'TCP'},
+        @{Name = 'IPP'; Port = $ippPort; Protocol = 'TCP'}
+    )
+    if ($mdnsEnabled) {
+        # One rule regardless of how many services announce themselves (IPP,
+        # eSCL): they all use the same UDP 5353 multicast port.
+        $rules += @{Name = 'mDNS'; Port = 5353; Protocol = 'UDP'}
     }
-    Say "Firewall: TCP $webPort and $ippPort allowed on private networks." Green
+    $rules = $rules | Where-Object { $_.Port -ne 0 }
+    foreach ($rule in $rules) {
+        New-NetFirewallRule -DisplayName "MFP Print & Scan Server ($($rule.Name))" -Group $FirewallGroup -Direction Inbound `
+            -Protocol $rule.Protocol -LocalPort $rule.Port -Action Allow -Profile Private, Domain | Out-Null
+    }
+    $opened = ($rules | ForEach-Object { "$($_.Protocol) $($_.Port)" }) -join ', '
+    Say "Firewall: $opened allowed on private networks." Green
     if (Get-NetConnectionProfile -ErrorAction SilentlyContinue | Where-Object NetworkCategory -eq 'Public') {
         Say ("Your network is marked 'Public', so other devices won't reach the server. Switch it to 'Private': " +
              'Settings -> Network & Internet -> (your network) -> Network profile.') Yellow
