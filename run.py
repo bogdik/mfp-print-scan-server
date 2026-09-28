@@ -38,10 +38,12 @@ def log_to_file(path: Path) -> None:
 
 async def serve_both():
     from app.main import app
+    from app.log_setup import build_log_config
 
-    servers = [uvicorn.Server(uvicorn.Config(app, host=HOST, port=WEB_PORT, **WEB_SSL_KWARGS))]
+    log_config = build_log_config()
+    servers = [uvicorn.Server(uvicorn.Config(app, host=HOST, port=WEB_PORT, log_config=log_config, **WEB_SSL_KWARGS))]
     if IPP_PORT:
-        servers.append(uvicorn.Server(uvicorn.Config(app, host=HOST, port=IPP_PORT)))
+        servers.append(uvicorn.Server(uvicorn.Config(app, host=HOST, port=IPP_PORT, log_config=log_config)))
     await asyncio.gather(*(s.serve() for s in servers))
 
 
@@ -69,6 +71,9 @@ if __name__ == "__main__":
     # opt-in via MFP_RELOAD=1, watches only the app package and serves the
     # web UI only (no IPP port).
     if os.environ.get("MFP_RELOAD") == "1":
-        uvicorn.run("app.main:app", host=HOST, port=WEB_PORT, reload=True, reload_dirs=["app"], **WEB_SSL_KWARGS)
+        from app.log_setup import build_log_config
+
+        uvicorn.run("app.main:app", host=HOST, port=WEB_PORT, reload=True, reload_dirs=["app"],
+                    log_config=build_log_config(), **WEB_SSL_KWARGS)
     else:
         asyncio.run(serve_both())
