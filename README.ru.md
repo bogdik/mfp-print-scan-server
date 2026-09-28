@@ -233,20 +233,22 @@ chmod +x start.sh
 # 1. Разложить код и создать служебную учётную запись
 sudo cp -r mfp-print-scan-server /opt/mfp-print-scan-server
 sudo useradd --system --home /opt/mfp-print-scan-server --shell /usr/sbin/nologin mfp
+
+# 2. Доступ к принтеру/сканеру - только группы, которые реально есть в системе
+for grp in lp scanner; do getent group "$grp" >/dev/null && sudo usermod -aG "$grp" mfp; done
 sudo chown -R mfp:mfp /opt/mfp-print-scan-server
 
-# 2. Создать .venv и поставить зависимости от имени этого пользователя
+# 3. Создать .venv и поставить зависимости от имени этого пользователя
 sudo -u mfp /opt/mfp-print-scan-server/start.sh --setup-only
 
-# 3. Установить и запустить службу
+# 4. Установить и запустить службу
 sudo cp /opt/mfp-print-scan-server/deploy/mfp-print-scan-server.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now mfp-print-scan-server
 ```
 
 Перед установкой проверьте в unit-файле:
-- `User=` / `Group=`: от чьего имени работает сервер;
-- `SupplementaryGroups=lp scanner`: группы для печати и доступа к USB-сканеру. Если какой-то группы в системе нет, systemd откажется запускать службу, поэтому проверьте через `getent group scanner` и уберите лишние;
+- `User=` / `Group=`: от чьего имени работает сервер (членства в группах `lp`/`scanner`, выставленного в шаге 2, достаточно для доступа к устройству — отдельная строка `SupplementaryGroups=` в unit-файле не нужна, и она вообще отказалась бы запускать службу, если какой-то группы нет, например на Fedora нет группы «scanner»);
 - `WorkingDirectory=` / `ExecStart=`: поменяйте, если код лежит не в `/opt/mfp-print-scan-server`;
 - `Environment=`: любые переменные из раздела [Настройки](#настройки).
 

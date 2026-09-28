@@ -11,9 +11,12 @@
 #   - writes its log to logs\server.log.
 # It also opens what's needed in Windows Firewall (private/domain networks):
 #   - TCP for the web port and, if enabled, the IPP port;
-#   - UDP 5353 (mDNS/Bonjour), if mdns = yes — needed for AirPrint, AirScan/eSCL
+#   - UDP 5353 (mDNS/Bonjour), if mdns = yes - needed for AirPrint, AirScan/eSCL
 #     and "Add Printer" discovery to find the server at all. The web/IPP ports
 #     above are still what the actual print/scan traffic uses afterwards.
+
+# -NoPause: don't wait for Enter at the end (the installer runs this hidden).
+param([switch]$NoPause)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -21,7 +24,7 @@ Set-Location $root
 
 function Say($text, $color = 'Gray') { Write-Host "[MFP] $text" -ForegroundColor $color }
 function Done($code) {
-    Read-Host 'Press Enter to close this window' | Out-Null
+    if (-not $NoPause) { Read-Host 'Press Enter to close this window' | Out-Null }
     exit $code
 }
 

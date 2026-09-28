@@ -233,20 +233,22 @@ An example unit is in [`deploy/mfp-print-scan-server.service`](deploy/mfp-print-
 # 1. Put the code in place and create a service account
 sudo cp -r mfp-print-scan-server /opt/mfp-print-scan-server
 sudo useradd --system --home /opt/mfp-print-scan-server --shell /usr/sbin/nologin mfp
+
+# 2. Printer/scanner device access - only groups this system actually has
+for grp in lp scanner; do getent group "$grp" >/dev/null && sudo usermod -aG "$grp" mfp; done
 sudo chown -R mfp:mfp /opt/mfp-print-scan-server
 
-# 2. Create .venv and install dependencies as that user
+# 3. Create .venv and install dependencies as that user
 sudo -u mfp /opt/mfp-print-scan-server/start.sh --setup-only
 
-# 3. Install and start the service
+# 4. Install and start the service
 sudo cp /opt/mfp-print-scan-server/deploy/mfp-print-scan-server.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now mfp-print-scan-server
 ```
 
 Check the unit before installing it:
-- `User=` / `Group=`: the account the server runs as;
-- `SupplementaryGroups=lp scanner`: groups for printing and for USB scanner access. systemd refuses to start if a listed group doesn't exist, so check with `getent group scanner` and drop the missing ones;
+- `User=` / `Group=`: the account the server runs as (its `lp`/`scanner` group membership, set up in step 2 above, is enough for device access — the unit doesn't need its own `SupplementaryGroups=` line, which would refuse to start at all if a listed group doesn't exist, e.g. Fedora has no "scanner" group);
 - `WorkingDirectory=` / `ExecStart=`: change them if the code isn't in `/opt/mfp-print-scan-server`;
 - `Environment=`: any [configuration](#configuration) variables.
 

@@ -3,6 +3,7 @@
 # Example install (adjust paths and user — see README, "Running as a service"):
 #   sudo cp -r mfp-print-scan-server /opt/mfp-print-scan-server
 #   sudo useradd --system --home /opt/mfp-print-scan-server --shell /usr/sbin/nologin mfp
+#   for grp in lp scanner; do getent group "$grp" >/dev/null && sudo usermod -aG "$grp" mfp; done
 #   sudo chown -R mfp:mfp /opt/mfp-print-scan-server
 #   sudo -u mfp /opt/mfp-print-scan-server/start.sh --setup-only
 #   sudo cp /opt/mfp-print-scan-server/deploy/mfp-print-scan-server.service /etc/systemd/system/
@@ -21,13 +22,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Account the server runs as. It needs to print (lp) and to reach the USB
-# scanner (group "scanner" on Debian/Ubuntu, "lp" on some other distros).
-# systemd refuses to start if a listed group doesn't exist — check with
-# `getent group scanner` and drop the ones your system doesn't have.
 User=mfp
 Group=mfp
-SupplementaryGroups=lp scanner
+# Printer/scanner access: the usermod step above adds mfp to whichever of
+# lp/scanner exist on this system, and systemd applies them via User= —
+# not listed here as SupplementaryGroups=, since it refuses to even start
+# if a listed group doesn't exist (Fedora has no "scanner" group).
 
 WorkingDirectory=/opt/mfp-print-scan-server
 ExecStart=/opt/mfp-print-scan-server/.venv/bin/python /opt/mfp-print-scan-server/run.py

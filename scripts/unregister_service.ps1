@@ -2,12 +2,15 @@
 # task and removes the firewall rules. Job history, scans and logs are kept.
 # Run via unregister_service.bat (asks for administrator rights).
 
+# -NoPause: don't wait for Enter at the end (the installer runs this hidden).
+param([switch]$NoPause)
+
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
 function Say($text, $color = 'Gray') { Write-Host "[MFP] $text" -ForegroundColor $color }
 function Done($code) {
-    Read-Host 'Press Enter to close this window' | Out-Null
+    if (-not $NoPause) { Read-Host 'Press Enter to close this window' | Out-Null }
     exit $code
 }
 

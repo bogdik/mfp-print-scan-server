@@ -28,7 +28,9 @@ case "$1" in
         su -s /bin/sh mfp -c "$PREFIX/start.sh --setup-only"
 
         systemctl daemon-reload || true
-        systemctl enable --now mfp-print-scan-server || true
+        systemctl enable mfp-print-scan-server || true
+        # restart, not start: on an upgrade the old version is still running.
+        systemctl restart mfp-print-scan-server || true
 
         echo ""
         echo "MFP Print & Scan Server: http://localhost:8000"

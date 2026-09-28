@@ -87,19 +87,14 @@ Name: "{group}\Stop starting automatically"; Filename: "{app}\unregister_service
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 
 [Run]
-; First-time setup mirrors "Steps" in README, "Windows": create the venv and
-; install dependencies (needs internet access), then register the scheduled
-; task, firewall rules, and start the server — exactly register_service.bat's
-; own logic, run here non-interactively.
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-    Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\register_service.ps1"""; \
-    WorkingDir: "{app}"; StatusMsg: "Setting up the Python environment and the background service..."; \
-    Flags: runhidden waituntilterminated
+; First-time setup (venv, dependencies, scheduled task, firewall, start) runs
+; from CurStepChanged below rather than here, so its exit code can be checked.
 Filename: "{app}\open-web-ui.url"; Description: "Open the web UI"; Flags: postinstall shellexec skipifsilent
 
 [UninstallRun]
+; -NoPause: the script otherwise waits for Enter, in a window that's hidden.
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-    Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\unregister_service.ps1"""; \
+    Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\unregister_service.ps1"" -NoPause"; \
     WorkingDir: "{app}"; RunOnceId: "UnregisterMfpService"; Flags: runhidden waituntilterminated
 
 [UninstallDelete]
@@ -108,6 +103,9 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
 ; deliberately NOT listed here, so uninstalling never deletes them silently
 ; (matching the .deb/.rpm postrm/postun — see packaging docs).
 Type: filesandordirs; Name: "{app}\.venv"
+; Only the program's own code, but Python leaves __pycache__ folders in it at
+; run time that the uninstaller didn't install and so wouldn't remove.
+Type: filesandordirs; Name: "{app}\app"
 Type: filesandordirs; Name: "{app}\logs"
 Type: files; Name: "{app}\open-web-ui.url"
 
@@ -116,12 +114,15 @@ function PythonFound(): Boolean;
 var
   ResultCode: Integer;
 begin
-  // Same check start.ps1 itself does: the python.org launcher (py) or a
-  // "python" on PATH that isn't the Microsoft Store stub. Exec's ResultCode
-  // is that process's exit code; "where" exits 0 only if it found something.
-  Result := Exec('where.exe', 'py.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+  // The same interpreters start.ps1 tries (the python.org launcher py, then
+  // "python"), actually run: "where python.exe" would also find the
+  // Microsoft Store stub, which isn't Python and exits 9009 when run.
+  // Exits 0 only for a real Python 3.11+.
+  Result := Exec('py.exe', '-3 -c "import sys; sys.exit(sys.version_info < (3, 11))"', '',
+                 SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
   if not Result then
-    Result := Exec('where.exe', 'python.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+    Result := Exec('python.exe', '-c "import sys; sys.exit(sys.version_info < (3, 11))"', '',
+                   SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
 end;
 
 function InitializeSetup(): Boolean;
@@ -137,12 +138,30 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
 begin
+  if CurStep <> ssPostInstall then
+    Exit;
   // A small .url shortcut target for the "Open web UI" Start Menu icon —
   // written directly rather than shelled out to cmd.exe, so there's no
   // quoting to get wrong. Port 8000 is this project's documented default
   // (config.example.ini); a custom port needs its own bookmark.
-  if CurStep = ssPostInstall then
-    SaveStringToFile(ExpandConstant('{app}\open-web-ui.url'),
-      '[InternetShortcut]' + #13#10 + 'URL=http://localhost:8000/' + #13#10, False);
+  SaveStringToFile(ExpandConstant('{app}\open-web-ui.url'),
+    '[InternetShortcut]' + #13#10 + 'URL=http://localhost:8000/' + #13#10, False);
+
+  // First-time setup mirrors "Steps" in README, "Windows": create the venv
+  // and install dependencies (needs internet access), then register the
+  // scheduled task, firewall rules, and start the server — exactly
+  // register_service.bat's own logic. -NoPause: it would otherwise wait for
+  // Enter in a hidden window, and setup would hang forever.
+  WizardForm.StatusLabel.Caption := 'Setting up the Python environment and the background service...';
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+              ExpandConstant('-NoProfile -ExecutionPolicy Bypass -File "{app}\scripts\register_service.ps1" -NoPause'),
+              ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+    MsgBox('The files are installed, but setting up the background service failed ' +
+           '(exit code ' + IntToStr(ResultCode) + '). Most often that''s no internet access for ' +
+           'installing the Python packages, or port 8000 already in use.' + #13#10#13#10 +
+           'Run "Start automatically with Windows" from the Start menu to retry and see the error.',
+           mbError, MB_OK);
 end;

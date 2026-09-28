@@ -9,7 +9,10 @@ Wants=network-online.target
 Type=simple
 User=mfp
 Group=mfp
-SupplementaryGroups=lp scanner
+# Printer/scanner access: the install script adds mfp to the lp/scanner groups
+# that exist on this system, and systemd applies them via User=. Not listed as
+# SupplementaryGroups= - systemd won't start if one doesn't exist (Fedora has
+# no "scanner" group).
 
 WorkingDirectory=/opt/mfp-print-scan-server
 ExecStart=/opt/mfp-print-scan-server/.venv/bin/python /opt/mfp-print-scan-server/run.py

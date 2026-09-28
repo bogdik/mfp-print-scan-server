@@ -68,7 +68,9 @@ echo "Setting up the Python environment (needs internet access, first install on
 su -s /bin/sh mfp -c "/opt/mfp-print-scan-server/start.sh --setup-only"
 
 systemctl daemon-reload || true
-systemctl enable --now mfp-print-scan-server.service || true
+systemctl enable mfp-print-scan-server.service || true
+# restart, not start: on an upgrade the old version is still running.
+systemctl restart mfp-print-scan-server.service || true
 
 echo ""
 echo "MFP Print & Scan Server: http://localhost:8000"
