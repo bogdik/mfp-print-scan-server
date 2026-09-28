@@ -16,10 +16,10 @@
 ; below) so a missing Python fails fast with a clear message instead of
 ; installing files that won't run.
 ;
-; NOT built or run here — there is no Windows machine or Inno Setup install
-; in the environment this was written in. Written carefully and against the
-; documented Inno Setup 6 behavior, but treat it as untested until someone
-; actually compiles and runs the installer on real Windows.
+; Tested: compiled with Inno Setup 7.1, installed and uninstalled on
+; Windows 10 (task, firewall rules, shortcuts, server start; uninstall keeps
+; config.ini and the user's data). Written against Inno Setup 6, which
+; should compile it as well.
 
 #define MyAppName "MFP Print & Scan Server"
 #define MyAppPublisher "bogdik"

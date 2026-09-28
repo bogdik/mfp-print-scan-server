@@ -117,14 +117,14 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 | Windows 10 Enterprise LTSC 2021 (21H2), Python 3.12 | ✅ server: printing, preview, IPP, scanning, maintenance UI |
 | Canon PIXMA MG2541 (driver "Canon MG2500 series Printer", USB) | ✅ printing (PDF, images, text), WIA scanning |
 | Linux client (CUPS, driverless IPP Everywhere) → this server | ✅ printing from GNOME Text Editor, LibreOffice, PDF viewer |
-| Windows client with "Microsoft IPP Class Driver" | ⚠️ implemented per spec, not yet confirmed on a real client |
-| Bonjour/mDNS advertisement (`zeroconf`) | ⚠️ TXT record verified correct with `avahi-browse` against a stand-in printer object on Linux; not yet run for real on Windows, and no macOS/iOS/Android device has tried discovering it |
-| AirPrint `_universal` subtype registration | ⚠️ verified with a real register-then-browse test (a client `Zeroconf()` instance browsing `_universal._sub._ipp._tcp.local.` found the test service, resolved, with the correct `URF=none` and port) — not yet tried from an actual iPhone/iPad "Add Printer" |
+| Windows client with "Microsoft IPP Class Driver" | ✅ Windows 10 found the server via mDNS in "Add a printer" and installed it with the Microsoft IPP Class Driver (PDF as the document format, capabilities taken from the server); its Windows test page came through the IPP server to the MG2541 as a 1-page job with the client's user name and A4/plain paper/color settings |
+| Bonjour/mDNS advertisement (`zeroconf`) | ✅ run for real on Windows 10: `_ipp._tcp` (port 631) and `_uscan._tcp` (port 8000) are announced once each with the LAN address and resolve from a separate client process; UDP 5353 opened by `register_service.bat`/the installer. ⚠️ no macOS/iOS/Android device has tried discovering it yet |
+| AirPrint `_universal` subtype registration | ✅ browsing `_universal._sub._ipp._tcp.local.` finds the real Windows server with `URF=none` and port 631 — ⚠️ not yet tried from an actual iPhone/iPad "Add Printer" |
 | HTTPS for the web UI (`ssl_certfile`/`ssl_keyfile`) | ✅ tested on Linux: serves TLS only on the web port, falls back to plain HTTP cleanly if only one of the two is set |
 | Live printer status (Linux, via CUPS's own IPP) | ✅ tested against the real MG2500: correctly reports idle, and stopped+"paused" for a disabled queue; ink levels are unavailable for this printer's driver (expected, not a bug — see Known limitations) |
-| Live printer status (Windows, via WMI) | ⚠️ written against documented `Win32_Printer` fields, not yet run on a real Windows machine |
+| Live printer status (Windows, via WMI) | ✅ run on the real MG2541: reports idle and accepting jobs; ink levels are unavailable from this driver (same as on Linux). ⚠️ error states (paused, offline, out of paper) not exercised yet |
 | AirScan/eSCL server (Linux, real Canon PIXMA MG2500) | ✅ ScannerCapabilities/ScannerStatus/ScanJobs/NextDocument all tested against real hardware: correct bed size and formats reported, a real scan came back as PDF and as grayscale JPEG with the requested region cropped correctly (verified pixel size and content); mDNS advertisement seen by `avahi-browse` **and independently picked up by SANE's own `escl`/`airscan` client backends** on the same machine, with a matching UUID. That self-discovery also surfaced and let us fix a real bug: it made `scanimage -L` ~12x slower and occasionally hit a transient "device busy" — see "A Linux quirk this surfaced" in [How it works](#how-it-works) |
-| AirScan/eSCL server (Windows) | ⚠️ not yet run on a real Windows machine |
+| AirScan/eSCL server (Windows, real Canon PIXMA MG2541 over WIA) | ✅ ScannerCapabilities/ScannerStatus/ScanJobs/NextDocument tested with real scans: color JPEG at 150 dpi (full A4, 1275×1753) and grayscale PDF at 75 dpi; status goes Idle → Processing → Completed, a second NextDocument correctly answers 404 |
 | AirScan/eSCL discovery from a real macOS/iOS/Android device | ⚠️ not yet tried — only verified via `avahi-browse` and SANE's own eSCL client, not Apple's/Google's actual client software |
 | Linux server (CUPS printing) | ✅ printing was tested at the start of the project |
 | Linux server — SANE scanning (preview, area select, color/gray/lineart, JPEG/PNG/TIFF/PDF, merge to PDF) | ✅ tested end-to-end against a real Canon PIXMA MG2500 over `scanimage` |
@@ -135,6 +135,7 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 | Documents via LibreOffice 24.2 on Linux (TXT UTF-8 / Windows-1251, DOCX, RTF) | ✅ conversion, preview (correct Cyrillic) and conversion caching tested; the converted PDF reaches CUPS correctly — physical output on paper wasn't confirmed this run (printer was disconnected) |
 | Windows autostart task (`register_service.bat`) | ✅ confirmed across a full computer restart: the Task Scheduler task registers, and the server comes up on its own before anyone logs on |
 | Linux systemd unit | ✅ confirmed: installed under a dedicated `mfp` system user (enabled for boot), serving real requests and reaching the USB scanner via the `scanner` group |
+| Windows installer (`packaging/windows`, Inno Setup 7.1) | ✅ compiled, installed and uninstalled on Windows 10: creates `.venv`, the autostart task, firewall rules (TCP 8000/631, UDP 5353) and Start menu shortcuts, server comes up; uninstall removes the task, rules, shortcuts and program files and keeps `config.ini`/`scans`/`uploads` |
 
 Reports for other printers and scanners are very welcome, see [Extending](#extending).
 
@@ -720,7 +721,7 @@ Stack:
 |---|---|---|---|
 | Debian/Ubuntu | `packaging/deb/build.sh` | `dpkg-dev` (`sudo apt install dpkg-dev`) | `dist/mfp-print-scan-server_<version>_all.deb` |
 | Fedora/RHEL/openSUSE | `packaging/rpm/build.sh` | `rpm-build` (`sudo dnf install rpm-build`) | `dist/mfp-print-scan-server-<version>-1.noarch.rpm` |
-| Windows | `packaging/windows/mfp-print-scan-server.iss` | [Inno Setup 6](https://jrsoftware.org/isinfo.php) | `dist/mfp-print-scan-server-setup-<version>.exe` |
+| Windows | `packaging/windows/mfp-print-scan-server.iss` | [Inno Setup 6 or 7](https://jrsoftware.org/isinfo.php) | `dist/mfp-print-scan-server-setup-<version>.exe` |
 
 All three read the version from the `VERSION` file at the repo root — bump that before building a release. Run the two `.sh` ones from the repo root (`bash packaging/deb/build.sh`); the Windows one compiles with Inno Setup's `ISCC.exe packaging\windows\mfp-print-scan-server.iss` (or File → Open → Compile in the Inno Setup IDE).
 
@@ -729,7 +730,7 @@ None of the three bundle Python or its dependencies — `pip install`ing `requir
 - **`.deb`/`.rpm`**: install to `/opt/mfp-print-scan-server`, create a dedicated `mfp` system user (in the `lp`/`scanner` groups for device access), install and enable the systemd service from [`deploy/mfp-print-scan-server.service`](deploy/mfp-print-scan-server.service), and start it — `sudo apt install ./mfp-print-scan-server_*.deb` or `sudo dnf install ./mfp-print-scan-server-*.rpm` is then the whole setup. Removing the package (`apt remove`/`dnf remove`) stops the service but leaves `config.ini`, `data/`, `scans/` and `uploads/` in place; only `apt purge`/package erase drops the venv and the `mfp` user too, still never that data — see the comments in `packaging/deb/postrm` / the spec's `%postun`.
 - **Windows `.exe`**: installs per-user (`%LocalAppData%\MFP Print & Scan Server` — the background task runs as the signed-in user, not SYSTEM, so it needs to write there without admin rights every time it starts), then runs the existing `scripts\register_service.ps1` (Scheduled Task + firewall rules) non-interactively. Uninstalling runs `scripts\unregister_service.ps1` first, then removes the app files and `.venv`; `config.ini`, `data\`, `scans\` and `uploads\` are left behind the same way. It checks for Python before installing anything and points at python.org if it's missing — Python itself still isn't bundled, matching the "Windows" section under [Quick start](#quick-start).
 
-The Windows installer was written against Inno Setup 6's documented behavior but not yet compiled or run for real — there's no Windows machine or Inno Setup install in the environment it was written in. Treat it as a solid draft to build and test before relying on it, not a verified artifact.
+The Windows installer is tested: compiled with Inno Setup 7.1, then installed and uninstalled on Windows 10 (see [Tested hardware](#tested-hardware)). The `.deb`/`.rpm` still need a real build-and-install run on Linux.
 
 ## Known limitations
 
