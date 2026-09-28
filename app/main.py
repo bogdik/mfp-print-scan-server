@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import logging
+import socket
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -27,6 +28,7 @@ from .escl_routes import create_router as create_escl_router
 from .i18n import COOKIE as LANG_COOKIE, LANGS, current_lang, has as i18n_has, js_messages, pick_lang, t
 from .ipp.mdns import MdnsAnnouncer
 from .ipp.printer import IppPrinter, is_supported as ipp_supported
+from .mdns_util import local_ipv4_addresses
 from .models import (
     JobOut, JobStatus, OptionChoiceOut, PreviewOut, PrinterOptionOut, PrinterOut, PrinterStatusOut, QuotaOut,
     QuotaSetIn, SupplyLevelOut, TokenCreateIn, TokenCreateOut, TokenOut, UsageOut,
@@ -62,19 +64,32 @@ escl_mdns = EsclMdnsAnnouncer() if escl_scanner and settings.mdns else None
 WEB_SCHEME = "https" if settings.ssl_certfile and settings.ssl_keyfile else "http"
 
 
+_lifespan_servers = 0  # run.py serves this one app on two ports (web + IPP)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if ipp_printer:
-        ipp_printer.warm_up()
-    if mdns_announcer:
-        mdns_announcer.start(ipp_printer, settings.ipp_port, WEB_PORT)
-    if escl_mdns:
-        escl_mdns.start(escl_scanner, WEB_PORT)
-    yield
-    if mdns_announcer:
-        mdns_announcer.stop()
-    if escl_mdns:
-        escl_mdns.stop()
+    # Each uvicorn server runs the lifespan of the app it serves, so with the
+    # IPP port on this runs twice: start up with the first server and shut
+    # down with the last, or every mDNS service gets announced twice.
+    global _lifespan_servers
+    _lifespan_servers += 1
+    if _lifespan_servers == 1:
+        if ipp_printer:
+            ipp_printer.warm_up()
+        if mdns_announcer:
+            mdns_announcer.start(ipp_printer, settings.ipp_port, WEB_PORT)
+        if escl_mdns:
+            escl_mdns.start(escl_scanner, WEB_PORT)
+    try:
+        yield
+    finally:
+        _lifespan_servers -= 1
+        if _lifespan_servers == 0:
+            if mdns_announcer:
+                mdns_announcer.stop()
+            if escl_mdns:
+                escl_mdns.stop()
 
 
 app = FastAPI(title="MFP Print & Scan Server", lifespan=lifespan)
@@ -290,13 +305,27 @@ async def request_language(request: Request, call_next):
         current_lang.reset(token)
 
 
+def _phone_url(request: Request) -> str:
+    """This page's URL as another device can open it: on the server itself
+    the page is often opened as localhost, which means nothing to a phone,
+    so that is swapped for the machine's LAN address."""
+    url = request.base_url
+    if url.hostname in ("localhost", "127.0.0.1", "::1"):
+        lan = [
+            socket.inet_ntoa(a) for a in local_ipv4_addresses() if not socket.inet_ntoa(a).startswith("169.254.")
+        ]
+        if lan:
+            url = url.replace(hostname=lan[0])
+    return str(url)
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     user = getattr(request.state, "user", None)
     return templates.TemplateResponse(request, "index.html", {
         "lang": current_lang.get(), "langs": LANGS, "messages": js_messages(),
         "user": user, "is_admin": user is not None and user in settings.admins,
-        "base_url": str(request.base_url),
+        "base_url": _phone_url(request),
     })
 
 
@@ -305,7 +334,7 @@ def qrcode_png(request: Request):
     """QR code for this page's own URL, so a phone camera can open it without
     typing the server's address — same idea as the printer's Bonjour/mDNS
     announcement, but for the web UI itself."""
-    img = qrcode.make(str(request.base_url), box_size=8, border=2)
+    img = qrcode.make(_phone_url(request), box_size=8, border=2)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return Response(content=buf.getvalue(), media_type="image/png")

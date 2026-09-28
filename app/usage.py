@@ -43,9 +43,11 @@ def sheets_this_month(user: str) -> int:
     """Sheets `user` has sent so far in the current calendar month — the
     window print quotas are checked against. Derived from job history rather
     than a separate counter, so it can never drift from what actually
-    happened (and a deleted job history entry naturally frees its quota)."""
+    happened (and a deleted job history entry naturally frees its quota).
+    Unlike the report, a job with an unknown page count counts as one page
+    per copy here, the same as quotas.enforce() assumes when admitting it."""
     now = datetime.now()
     return sum(
-        sheets(j) for j in job_store.list(limit=None)
+        (j.pages or 1) * j.copies for j in job_store.list(limit=None)
         if j.user == user and j.created_at.year == now.year and j.created_at.month == now.month
     )

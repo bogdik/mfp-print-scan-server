@@ -81,5 +81,7 @@ def enforce(user: str | None, pages: int | None, copies: int) -> None:
     if limit is None:
         return
     used = usage.sheets_this_month(user)
-    if used + (pages or 0) * copies > limit:
+    # Page count unknown (e.g. a document LibreOffice couldn't convert): it's
+    # still at least one sheet, or a limit of 0 wouldn't stop anything.
+    if used + (pages or 1) * copies > limit:
         raise QuotaExceeded(used, limit)

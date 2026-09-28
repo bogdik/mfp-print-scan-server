@@ -78,12 +78,16 @@ class Announcer:
         )
         try:
             zc = Zeroconf()
-            zc.register_service(info)
+            # The name can still be claimed on the network, e.g. by this very
+            # server's previous run that was killed without saying goodbye:
+            # take "<name>-2" like any Bonjour device instead of giving up.
+            zc.register_service(info, allow_name_change=True)
         except Exception:
             logger.exception("mDNS: failed to register %s", service_type)
             return False
         self._zc, self._info = zc, info
-        logger.info("mDNS: advertising %r as %s on port %d", name, service_type.rstrip("."), port)
+        instance_name = info.name  # possibly renamed above; subtypes must match
+        logger.info("mDNS: advertising %r as %s on port %d", instance_name, service_type.rstrip("."), port)
 
         for subtype in subtypes:
             try:
