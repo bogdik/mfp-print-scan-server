@@ -73,8 +73,11 @@ def build_capabilities(*, make_and_model: str, uuid: str, admin_url: str, caps) 
         if keyword:
             ET.SubElement(color_modes, _scan("ColorMode")).text = keyword
 
+    # Every format under both names, like HP's own scanners: some clients
+    # only read pwg:DocumentFormat, others only scan:DocumentFormatExt.
     formats = ET.SubElement(profile, _scan("DocumentFormats"))
-    ET.SubElement(formats, _pwg("DocumentFormat")).text = "application/pdf"
+    for fmt in DOCUMENT_FORMATS:
+        ET.SubElement(formats, _pwg("DocumentFormat")).text = fmt
     for fmt in DOCUMENT_FORMATS:
         ET.SubElement(formats, _scan("DocumentFormatExt")).text = fmt
 
@@ -86,19 +89,45 @@ def build_capabilities(*, make_and_model: str, uuid: str, admin_url: str, caps) 
 
     ET.SubElement(ET.SubElement(profile, _scan("ColorSpaces")), _scan("ColorSpace")).text = "sRGB"
 
+    # Accepted and scanned the same way (the request's own resolution/mode
+    # decide the result); listed because macOS asks for "Preview" first.
+    intents = ET.SubElement(input_caps, _scan("SupportedIntents"))
+    for intent in ("Document", "TextAndGraphic", "Photo", "Preview"):
+        ET.SubElement(intents, _scan("Intent")).text = intent
+
     return _serialize(root)
 
 
-def build_status(*, state: str, jobs: list[tuple[str, str]]) -> bytes:
-    """`jobs`: (job-uri, eSCL job state) pairs, most recent first."""
+@dataclass
+class JobStatus:
+    uri: str
+    uuid: str
+    age: int  # seconds since the job was created
+    state: str  # Processing | Completed | Canceled | Aborted
+    reason: str  # JobScanning, JobCompletedSuccessfully, ...
+    images_completed: int  # pages scanned so far
+    images_to_transfer: int  # scanned pages the client hasn't fetched yet
+
+
+def build_status(*, state: str, jobs: list[JobStatus]) -> bytes:
+    """`jobs`: most recent first. Apple's client (macOS Image Capture, iOS)
+    follows its job through these fields — ImagesToTransfer in particular
+    tells it a page is waiting at NextDocument — so they're all filled in,
+    the way HP's own scanners report them."""
     root = ET.Element(_scan("ScannerStatus"))
     ET.SubElement(root, _pwg("Version")).text = "2.0"
     ET.SubElement(root, _pwg("State")).text = state
     jobs_el = ET.SubElement(root, _scan("Jobs"))
-    for uri, job_state in jobs:
+    for job in jobs:
         info = ET.SubElement(jobs_el, _scan("JobInfo"))
-        ET.SubElement(info, _pwg("JobUri")).text = uri
-        ET.SubElement(info, _pwg("JobState")).text = job_state
+        ET.SubElement(info, _pwg("JobUri")).text = job.uri
+        ET.SubElement(info, _pwg("JobUuid")).text = job.uuid
+        ET.SubElement(info, _scan("Age")).text = str(job.age)
+        ET.SubElement(info, _pwg("ImagesCompleted")).text = str(job.images_completed)
+        ET.SubElement(info, _pwg("ImagesToTransfer")).text = str(job.images_to_transfer)
+        ET.SubElement(info, _pwg("JobState")).text = job.state
+        reasons = ET.SubElement(info, _pwg("JobStateReasons"))
+        ET.SubElement(reasons, _pwg("JobStateReason")).text = job.reason
     return _serialize(root)
 
 

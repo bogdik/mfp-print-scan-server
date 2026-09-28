@@ -46,10 +46,10 @@ def create_router(scanner: EsclScanner, web_port: int) -> APIRouter:
         job.ready.wait(timeout=180)  # runs in FastAPI's sync-route threadpool, doesn't block the event loop
         if job.state == "Aborted":
             raise HTTPException(status_code=500, detail=job.error or "scan failed")
-        if job.fetched or job.image is None:
+        image = scanner.take_document(job)
+        if image is None:
             raise HTTPException(status_code=404, detail="no more documents")
-        job.fetched = True
-        return Response(content=job.image, media_type=job.content_type)
+        return Response(content=image, media_type=job.content_type)
 
     @router.delete("/ScanJobs/{job_id}")
     def cancel_job(job_id: str):

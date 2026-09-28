@@ -27,6 +27,14 @@ JOB_TTL = 300  # seconds a finished job stays listed / its image stays downloada
 
 @dataclass
 class Job:
+    """eSCL job states the way scanners themselves report them: a job stays
+    "Processing" not just while scanning but until the client has fetched
+    the page and then been told at NextDocument that there are no more
+    (404), and only then turns "Completed" — see take_document(). Reporting
+    Completed as soon as the scan was done made macOS Image Capture treat
+    the job as finished with nothing to transfer — the scanner ran, but the
+    image never showed up on the Mac."""
+
     id: str
     state: str = "Processing"  # Processing | Completed | Canceled | Aborted
     content_type: str = "application/pdf"
@@ -35,6 +43,24 @@ class Job:
     created: float = field(default_factory=time.time)
     fetched: bool = False
     ready: threading.Event = field(default_factory=threading.Event)
+    uuid: str = field(default_factory=lambda: str(uuid_mod.uuid4()))
+
+    @property
+    def scanning(self) -> bool:
+        return self.state == "Processing" and not self.ready.is_set()
+
+    def status(self) -> protocol.JobStatus:
+        waiting = self.image is not None and not self.fetched
+        reason = {
+            "Completed": "JobCompletedSuccessfully",
+            "Canceled": "JobCanceledByUser",
+            "Aborted": "AbortedBySystem",
+        }.get(self.state, "JobScanning")
+        return protocol.JobStatus(
+            uri=f"/eSCL/ScanJobs/{self.id}", uuid=self.uuid, age=int(time.time() - self.created),
+            state=self.state, reason=reason,
+            images_completed=1 if self.image is not None else 0, images_to_transfer=1 if waiting else 0,
+        )
 
 
 class EsclScanner:
@@ -82,9 +108,9 @@ class EsclScanner:
 
     def status_xml(self) -> bytes:
         with self._lock:
-            busy = any(j.state == "Processing" for j in self._jobs.values())
-            recent = sorted(self._jobs.items(), key=lambda kv: kv[1].created, reverse=True)[:5]
-            jobs = [(f"/eSCL/ScanJobs/{jid}", j.state) for jid, j in recent]
+            busy = any(j.scanning for j in self._jobs.values())
+            recent = sorted(self._jobs.values(), key=lambda j: j.created, reverse=True)[:5]
+            jobs = [j.status() for j in recent]
         return protocol.build_status(state="Processing" if busy else "Idle", jobs=jobs)
 
     def create_job(self, body: bytes) -> str:
@@ -105,8 +131,8 @@ class EsclScanner:
                     x=req.x_mm, y=req.y_mm, width=req.width_mm, height=req.height_mm,
                 )
                 image = self.backend.scan(scanner_id, params)
+                # Stays "Processing" until fetched — see Job.
                 job.content_type, job.image = _encode(image, req.document_format)
-                job.state = "Completed"
             except ScannerBusy as exc:
                 job.state, job.error = "Aborted", str(exc)
             except ScanError as exc:
@@ -124,13 +150,29 @@ class EsclScanner:
         """Lock held. Drop finished jobs past their TTL, so _jobs doesn't
         grow forever if a client never re-checks status."""
         now = time.time()
-        stale = [jid for jid, j in self._jobs.items() if j.state != "Processing" and now - j.created > JOB_TTL]
+        stale = [jid for jid, j in self._jobs.items() if not j.scanning and now - j.created > JOB_TTL]
         for jid in stale:
             del self._jobs[jid]
 
     def get_job(self, job_id: str) -> Job | None:
         with self._lock:
             return self._jobs.get(job_id)
+
+    def take_document(self, job: Job) -> bytes | None:
+        """The scanned page, once; a further NextDocument gets None (404: no
+        more pages). Only that 404 completes the job: until then it stays
+        "Processing", as on real scanners — macOS polls ScannerStatus right
+        after fetching a page, and seeing "Completed" there (before its
+        own end-of-job NextDocument) makes it drop the scan it just got."""
+        with self._lock:
+            if job.image is None:
+                return None
+            if job.fetched:
+                if job.state == "Processing":
+                    job.state = "Completed"
+                return None
+            job.fetched = True
+            return job.image
 
     def cancel_job(self, job_id: str) -> bool:
         with self._lock:
