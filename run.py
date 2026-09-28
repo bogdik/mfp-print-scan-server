@@ -1,7 +1,9 @@
 import argparse
 import asyncio
+import logging
 import os
 import platform
+import socket
 import sys
 from pathlib import Path
 
@@ -14,7 +16,12 @@ WEB_PORT = settings.port
 # IPP printer port for driverless clients (Windows only); 631 is the IPP
 # standard port Windows assumes. ipp_port = 0 in config.ini disables it.
 IPP_PORT = settings.ipp_port if platform.system() == "Windows" else 0
+# Extra eSCL-only port (80 by default): scanning apps where you type just an
+# IP address look for the scanner at http://<ip>/eSCL, not on our web port.
+ESCL_PORT = settings.escl_port if settings.escl and settings.escl_port not in (WEB_PORT, IPP_PORT) else 0
 LOG_MAX_BYTES = 5 * 1024 * 1024
+
+logger = logging.getLogger("mfp")
 
 # HTTPS for the web UI only (ssl_certfile/ssl_keyfile in config.ini) — the
 # IPP port stays plain HTTP, IPP-over-TLS isn't implemented.
@@ -36,6 +43,33 @@ def log_to_file(path: Path) -> None:
     sys.stdout = sys.stderr = stream
 
 
+def port_free(port: int) -> bool:
+    """Can we listen on this port? Checked up front for the optional eSCL
+    port: uvicorn failing to bind one of several servers leaves the process
+    hanging instead of exiting, and an optional extra shouldn't cost the
+    whole server (port 80 is often taken, or needs root on Linux)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((HOST, port))
+        except OSError:
+            return False
+    return True
+
+
+def escl_only(app):
+    """The app, restricted to /eSCL/* — the extra port is for scanning
+    clients only, not a second way into the web UI."""
+
+    async def wrapped(scope, receive, send):
+        if scope["type"] == "http" and not scope["path"].startswith("/eSCL/"):
+            await send({"type": "http.response.start", "status": 404, "headers": [(b"content-length", b"0")]})
+            await send({"type": "http.response.body", "body": b""})
+            return
+        await app(scope, receive, send)
+
+    return wrapped
+
+
 async def serve_both():
     from app.main import app
     from app.log_setup import build_log_config
@@ -44,6 +78,17 @@ async def serve_both():
     servers = [uvicorn.Server(uvicorn.Config(app, host=HOST, port=WEB_PORT, log_config=log_config, **WEB_SSL_KWARGS))]
     if IPP_PORT:
         servers.append(uvicorn.Server(uvicorn.Config(app, host=HOST, port=IPP_PORT, log_config=log_config)))
+    if ESCL_PORT:
+        if port_free(ESCL_PORT):
+            servers.append(uvicorn.Server(uvicorn.Config(
+                escl_only(app), host=HOST, port=ESCL_PORT, log_config=log_config, lifespan="off",
+            )))
+        else:
+            logger.warning(
+                "eSCL: port %d is busy or needs admin/root rights - scanning apps that take only an IP "
+                "address won't find the scanner (AirScan/mDNS clients still will, on port %d). "
+                "Free the port or set escl_port = 0 in config.ini to silence this.", ESCL_PORT, WEB_PORT,
+            )
     await asyncio.gather(*(s.serve() for s in servers))
 
 

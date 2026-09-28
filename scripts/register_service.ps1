@@ -10,7 +10,7 @@
 #   - restarts the server if it exits, with no run-time limit;
 #   - writes its log to logs\server.log.
 # It also opens what's needed in Windows Firewall (private/domain networks):
-#   - TCP for the web port and, if enabled, the IPP port;
+#   - TCP for the web port and, if enabled, the IPP port and the extra eSCL port (80);
 #   - UDP 5353 (mDNS/Bonjour), if mdns = yes - needed for AirPrint, AirScan/eSCL
 #     and "Add Printer" discovery to find the server at all. The web/IPP ports
 #     above are still what the actual print/scan traffic uses afterwards.
@@ -54,8 +54,8 @@ try {
     $python = Join-Path $root '.venv\Scripts\python.exe'
 
     # Ports/settings as the server will see them: config.ini, overridden by MFP_* variables.
-    $vals = (& $python -c "from app.config import settings; print(settings.port, settings.ipp_port, int(settings.mdns))") -split ' '
-    $webPort, $ippPort, $mdnsEnabled = [int]$vals[0], [int]$vals[1], [int]$vals[2]
+    $vals = (& $python -c "from app.config import settings; print(settings.port, settings.ipp_port, int(settings.mdns), settings.escl_port if settings.escl else 0)") -split ' '
+    $webPort, $ippPort, $mdnsEnabled, $esclPort = [int]$vals[0], [int]$vals[1], [int]$vals[2], [int]$vals[3]
 
     # 2. A server already running (start.bat window or an old task) would hold the ports.
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
@@ -93,7 +93,8 @@ try {
     Get-NetFirewallRule -Group $FirewallGroup -ErrorAction SilentlyContinue | Remove-NetFirewallRule
     $rules = @(
         @{Name = 'Web'; Port = $webPort; Protocol = 'TCP'},
-        @{Name = 'IPP'; Port = $ippPort; Protocol = 'TCP'}
+        @{Name = 'IPP'; Port = $ippPort; Protocol = 'TCP'},
+        @{Name = 'eSCL'; Port = $esclPort; Protocol = 'TCP'}
     )
     if ($mdnsEnabled) {
         # One rule regardless of how many services announce themselves (IPP,

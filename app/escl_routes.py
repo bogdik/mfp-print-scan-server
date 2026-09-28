@@ -35,7 +35,9 @@ def create_router(scanner: EsclScanner, web_port: int) -> APIRouter:
             job_id = await run_in_threadpool(scanner.create_job, body)
         except ScanError as exc:
             raise HTTPException(status_code=503, detail=str(exc))
-        location = f"{request.url.scheme}://{request.url.hostname}:{web_port}/eSCL/ScanJobs/{job_id}"
+        # The port the client came in on (web port, or the extra escl_port):
+        # an app that only knows http://<ip>/eSCL must be sent back there.
+        location = str(request.url.replace(path=f"/eSCL/ScanJobs/{job_id}", query=""))
         return Response(status_code=201, headers={"Location": location})
 
     @router.get("/ScanJobs/{job_id}/NextDocument")

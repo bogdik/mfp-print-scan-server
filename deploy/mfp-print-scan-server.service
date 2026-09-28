@@ -43,6 +43,9 @@ Restart=on-failure
 RestartSec=5
 
 # Light hardening: the app only writes to its own folder (data/, scans/, uploads/).
+# Lets the non-root user listen on port 80 for escl_port (scanning apps that
+# take just an IP address look there); without it that one port is skipped.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
 ProtectSystem=full
 PrivateTmp=true

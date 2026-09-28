@@ -47,6 +47,7 @@ class Settings:
     mdns: bool = True  # advertise the IPP printer and/or eSCL scanner via Bonjour
     escl: bool = True  # AirScan/eSCL scanning endpoint (Windows and Linux)
     escl_scanner: str = ""  # empty = the scan backend's first scanner
+    escl_port: int = 80  # extra port serving only /eSCL/*, for apps that take just an IP; 0 = off
     ssl_certfile: Path | None = None  # both set = the web UI serves HTTPS instead of HTTP
     ssl_keyfile: Path | None = None
     data_dir: Path = ROOT / "data"
@@ -106,6 +107,7 @@ def load() -> Settings:
         mdns=_bool(get("mdns", "MFP_MDNS", "yes")),
         escl=_bool(get("escl", "MFP_ESCL", "yes")),
         escl_scanner=get("escl_scanner", "MFP_ESCL_SCANNER", ""),
+        escl_port=int(get("escl_port", "MFP_ESCL_PORT", "80")),
         ssl_certfile=opt_path("ssl_certfile", "MFP_SSL_CERTFILE"),
         ssl_keyfile=opt_path("ssl_keyfile", "MFP_SSL_KEYFILE"),
         data_dir=path("data_dir", "MFP_DATA_DIR", ROOT / "data"),

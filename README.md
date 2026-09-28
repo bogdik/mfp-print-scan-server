@@ -125,7 +125,8 @@ Cheap inkjet MFPs such as the Canon PIXMA MG2500 series have **only USB**: no Wi
 | Live printer status (Windows, via WMI) | ✅ run on the real MG2541: reports idle and accepting jobs; ink levels are unavailable from this driver (same as on Linux). ⚠️ error states (paused, offline, out of paper) not exercised yet |
 | AirScan/eSCL server (Linux, real Canon PIXMA MG2500) | ✅ ScannerCapabilities/ScannerStatus/ScanJobs/NextDocument all tested against real hardware: correct bed size and formats reported, a real scan came back as PDF and as grayscale JPEG with the requested region cropped correctly (verified pixel size and content); mDNS advertisement seen by `avahi-browse` **and independently picked up by SANE's own `escl`/`airscan` client backends** on the same machine, with a matching UUID. That self-discovery also surfaced and let us fix a real bug: it made `scanimage -L` ~12x slower and occasionally hit a transient "device busy" — see "A Linux quirk this surfaced" in [How it works](#how-it-works) |
 | AirScan/eSCL server (Windows, real Canon PIXMA MG2541 over WIA) | ✅ ScannerCapabilities/ScannerStatus/ScanJobs/NextDocument tested with real scans: color JPEG at 150 dpi (full A4, 1275×1753) and grayscale PDF at 75 dpi; status goes Idle → Processing → Completed, a second NextDocument correctly answers 404 |
-| AirScan/eSCL from a real Mac (Image Capture, macOS 12, Windows server) | ✅ adds the scanner, preview and full scan both arrive (preview 75 dpi, full scan an 11 MB JPEG). Getting there needed the job to stay "Processing" until the client's own end-of-job NextDocument gets a 404 — macOS drops a scan whose job already reads "Completed" when it checks right after fetching it. ⚠️ iOS/Android scanning not yet tried |
+| AirScan/eSCL from a real Mac (Image Capture, macOS 12, Windows server) | ✅ adds the scanner, preview and full scan both arrive (preview 75 dpi, full scan an 11 MB JPEG). Getting there needed the job to stay "Processing" until the client's own end-of-job NextDocument gets a 404 — macOS drops a scan whose job already reads "Completed" when it checks right after fetching it. ⚠️ iOS scanning not yet tried |
+| AirScan/eSCL from Android ("eSCL Scanner" app, Android 16, added by IP address) | ✅ added and scanned. Such apps take just an IP and look at port 80, so the server also answers `/eSCL/*` there (`escl_port`) — before that the phone's requests never reached the web port |
 | Linux server (CUPS printing) | ✅ printing was tested at the start of the project |
 | Linux server — SANE scanning (preview, area select, color/gray/lineart, JPEG/PNG/TIFF/PDF, merge to PDF) | ✅ tested end-to-end against a real Canon PIXMA MG2500 over `scanimage` |
 | Linux server — print preview (PDF/image rendering, margins) | ✅ tested; exact hardware margins aren't available on Linux (falls back to A4 + 5 mm) |
@@ -164,7 +165,7 @@ Stop it with <kbd>Ctrl</kbd>+<kbd>C</kbd> or by closing the window.
 
 **Start automatically:** to run it in the background from Windows startup, see [Running as a service](#running-as-a-service).
 
-**Allow access from other devices:** Windows asks about the firewall the first time Python listens on the network; allow it for private networks. If you register the autostart task (below), `register_service.bat` opens everything it needs by itself — the web port, the IPP port if enabled, and UDP 5353 for Bonjour/mDNS (needed for AirPrint, AirScan/eSCL and "Add Printer" discovery to find the server at all; the ports above are what the actual print/scan traffic uses afterwards) if `mdns = yes`.
+**Allow access from other devices:** Windows asks about the firewall the first time Python listens on the network; allow it for private networks. If you register the autostart task (below), `register_service.bat` opens everything it needs by itself — the web port, the IPP port if enabled, the eSCL port (`escl_port`, 80), and UDP 5353 for Bonjour/mDNS (needed for AirPrint, AirScan/eSCL and "Add Printer" discovery to find the server at all; the ports above are what the actual print/scan traffic uses afterwards) if `mdns = yes`.
 
 Running it manually via `start.bat` instead (no autostart task) skips that step, so add the rules yourself if other devices need to reach it (in an elevated PowerShell):
 
@@ -207,7 +208,7 @@ Double-click **`register_service.bat`** and approve the administrator prompt. It
    - runs **as your user account without storing a password** (S4U logon), so it sees the same printers, printer settings and default printer as you;
    - restarts the server if it exits (every minute), with no run-time limit;
    - writes the log to **`logs\server.log`** (the previous log is kept as `server.log.1` once it passes 5 MB);
-3. opens TCP for the web port (8000) and, if enabled, the IPP port (631) in Windows Firewall for private/domain networks, plus UDP 5353 for Bonjour/mDNS if `mdns = yes` (AirPrint, AirScan/eSCL and "Add Printer" discovery all need it to find the server, separately from the ports actual print/scan traffic uses) — and warns if your network is marked *Public*;
+3. opens TCP for the web port (8000) and, if enabled, the IPP port (631) and the eSCL port (`escl_port`, 80) in Windows Firewall for private/domain networks, plus UDP 5353 for Bonjour/mDNS if `mdns = yes` (AirPrint, AirScan/eSCL and "Add Printer" discovery all need it to find the server, separately from the ports actual print/scan traffic uses) — and warns if your network is marked *Public*;
 4. starts the server right away and checks that it answers.
 
 Why a scheduled task and not a classic Windows service:
@@ -376,6 +377,7 @@ session_days = 30
 | `mdns` | `yes` | advertise the IPP printer and/or eSCL scanner via Bonjour/mDNS (IPP: Windows only; eSCL: both OSes); `no` disables it | `MFP_MDNS` |
 | `escl` | `yes` | AirScan/eSCL scanning endpoint at `/eSCL/*` (Windows and Linux); `no` disables it | `MFP_ESCL` |
 | `escl_scanner` | *(empty)* | which scanner the eSCL endpoint serves; empty = the scan backend's first one | `MFP_ESCL_SCANNER` |
+| `escl_port` | `80` | extra port serving only `/eSCL/*`, for scanning apps where you type just an IP address (they look at `http://<ip>/eSCL`, port 80). If it's busy (IIS...) or needs root, the log says so and the server runs without it; `0` = off | `MFP_ESCL_PORT` |
 | `ssl_certfile`, `ssl_keyfile` | *(empty)* | certificate/key (PEM) for HTTPS on the web port; both must be set to enable it, see [Security](#security) | `MFP_SSL_CERTFILE`, `MFP_SSL_KEYFILE` |
 | `data_dir` | `data` | job history and the session signing key; relative paths are from the project folder | `MFP_DATA_DIR` |
 | `scans_dir` | `scans` | where scans are stored | `MFP_SCANS_DIR` |
