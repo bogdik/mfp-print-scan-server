@@ -36,8 +36,10 @@ try {
     # child; stopping the task may leave that child holding the ports. Match
     # the service's command line (run.py of this folder + --log-file).
     $runPy = (Join-Path $root 'run.py').ToLower()
-    Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
-        Where-Object { $_.CommandLine -and $_.CommandLine.ToLower().Contains($runPy) -and $_.CommandLine -match '--log-file' } |
+    $exe = (Join-Path $root 'mfp-server.exe').ToLower()
+    Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'mfp-server.exe'" |
+        Where-Object { $_.CommandLine -and $_.CommandLine -match '--log-file' -and
+                       ($_.CommandLine.ToLower().Contains($runPy) -or $_.CommandLine.ToLower().Contains($exe)) } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -Confirm:$false -ErrorAction SilentlyContinue }
 
     $rules = Get-NetFirewallRule -Group $FirewallGroup -ErrorAction SilentlyContinue

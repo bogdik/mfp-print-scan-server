@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 from . import auth
-from .config import settings
+from .config import ROOT, settings
 from .escl.mdns import EsclMdnsAnnouncer
 from .escl.server import EsclScanner
 from .escl_routes import create_router as create_escl_router
@@ -44,8 +44,8 @@ from .storage import job_store
 from .tokens import token_store
 from . import quotas, usage
 
-BASE_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = BASE_DIR.parent / "uploads"
+BASE_DIR = Path(__file__).resolve().parent  # static/ and templates/ (inside the bundle in the .exe build)
+UPLOAD_DIR = ROOT / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 WEB_PORT = settings.port

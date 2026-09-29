@@ -44,17 +44,23 @@ try {
     if (-not $user) { $user = "$env:USERDOMAIN\$env:USERNAME" }
     Say "Account for the server: $user"
 
-    # 1. Virtual environment and dependencies (same as start.bat).
-    Say 'Preparing the Python environment ...'
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'start.ps1') -SetupOnly
-    if ($LASTEXITCODE -ne 0) {
-        Say "Couldn't prepare .venv - see the error above." Red
-        Done 1
+    # 1. What to run: the standalone mfp-server.exe (packaging\windows build),
+    # or run.py with the project's .venv, prepared the same way as start.bat.
+    $exe = Join-Path $root 'mfp-server.exe'
+    if (Test-Path $exe) {
+        $server, $serverArgs = $exe, @()
+    } else {
+        Say 'Preparing the Python environment ...'
+        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'start.ps1') -SetupOnly
+        if ($LASTEXITCODE -ne 0) {
+            Say "Couldn't prepare .venv - see the error above." Red
+            Done 1
+        }
+        $server, $serverArgs = (Join-Path $root '.venv\Scripts\python.exe'), @(Join-Path $root 'run.py')
     }
-    $python = Join-Path $root '.venv\Scripts\python.exe'
 
     # Ports/settings as the server will see them: config.ini, overridden by MFP_* variables.
-    $vals = (& $python -c "from app.config import settings; print(settings.port, settings.ipp_port, int(settings.mdns), settings.escl_port if settings.escl else 0)") -split ' '
+    $vals = (& $server @serverArgs --print-ports) -split ' '
     $webPort, $ippPort, $mdnsEnabled, $esclPort = [int]$vals[0], [int]$vals[1], [int]$vals[2], [int]$vals[3]
 
     # 2. A server already running (start.bat window or an old task) would hold the ports.
@@ -62,10 +68,12 @@ try {
         Say 'The task already exists - updating it.'
         Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
         # The venv's python.exe is a launcher with the real Python as a child,
-        # which may outlive the stopped task - stop it by its command line.
+        # which may outlive the stopped task - stop it (or mfp-server.exe) by
+        # its command line.
         $runPy = (Join-Path $root 'run.py').ToLower()
-        Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
-            Where-Object { $_.CommandLine -and $_.CommandLine.ToLower().Contains($runPy) -and $_.CommandLine -match '--log-file' } |
+        Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'mfp-server.exe'" |
+            Where-Object { $_.CommandLine -and $_.CommandLine -match '--log-file' -and
+                           ($_.CommandLine.ToLower().Contains($runPy) -or $_.CommandLine.ToLower().Contains($exe.ToLower())) } |
             ForEach-Object { Stop-Process -Id $_.ProcessId -Force -Confirm:$false -ErrorAction SilentlyContinue }
         Start-Sleep -Seconds 2
     }
@@ -76,8 +84,8 @@ try {
 
     # 3. The scheduled task.
     $logFile = Join-Path $root 'logs\server.log'
-    $action = New-ScheduledTaskAction -Execute $python `
-        -Argument "`"$(Join-Path $root 'run.py')`" --log-file `"$logFile`"" -WorkingDirectory $root
+    $action = New-ScheduledTaskAction -Execute $server `
+        -Argument ((@($serverArgs | ForEach-Object { "`"$_`"" }) + "--log-file `"$logFile`"") -join ' ') -WorkingDirectory $root
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $taskPrincipal = New-ScheduledTaskPrincipal -UserId $user -LogonType S4U -RunLevel Limited
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `

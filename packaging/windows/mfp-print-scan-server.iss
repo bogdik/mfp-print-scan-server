@@ -1,30 +1,31 @@
 ; Inno Setup script for MFP Print & Scan Server (Windows).
 ;
-; Build with Inno Setup 6 (https://jrsoftware.org/isinfo.php):
+; Packs the standalone PyInstaller build, so the target machine needs no
+; Python. Build it first, then compile this with Inno Setup 6 or 7
+; (https://jrsoftware.org/isinfo.php):
+;   powershell -ExecutionPolicy Bypass -File packaging\windows\build-exe.ps1
 ;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\windows\mfp-print-scan-server.iss
 ; Output: dist\mfp-print-scan-server-setup-<version>.exe
 ;
 ; This wraps the *existing*, already-working scripts (start.ps1,
-; scripts\register_service.ps1, scripts\unregister_service.ps1) instead of
-; reimplementing service/task/firewall setup in Pascal Script: one source of
-; truth for that logic, whether someone runs it by hand or through this
-; installer.
-;
-; Python itself is NOT bundled — same prerequisite as the manual install
-; (README, "Windows"): python.org's Python 3.11+, "Add python.exe to PATH"
-; ticked. setup checks for it before copying anything (see InitializeSetup
-; below) so a missing Python fails fast with a clear message instead of
-; installing files that won't run.
+; scripts\register_service.ps1, scripts\unregister_service.ps1 — they run
+; mfp-server.exe when it's next to them) instead of reimplementing
+; task/firewall setup in Pascal Script: one source of truth for that logic,
+; whether someone runs it by hand or through this installer.
 ;
 ; Tested: compiled with Inno Setup 7.1, installed and uninstalled on
 ; Windows 10 (task, firewall rules, shortcuts, server start; uninstall keeps
-; config.ini and the user's data). Written against Inno Setup 6, which
-; should compile it as well.
+; config.ini and the user's data).
 
 #define MyAppName "MFP Print & Scan Server"
 #define MyAppPublisher "bogdik"
 #define MyAppURL "https://github.com/bogdik/mfp-print-scan-server"
 #define MyAppVersion Trim(FileRead(FileOpen(SourcePath + "..\..\VERSION")))
+#define BuildDir "..\..\dist\mfp-server"
+
+#if !FileExists(SourcePath + BuildDir + "\mfp-server.exe")
+  #error "dist\mfp-server\mfp-server.exe not found - run packaging\windows\build-exe.ps1 first"
+#endif
 
 [Setup]
 ; Fixed AppId (a random GUID, generated once for this project) so upgrades
@@ -37,28 +38,30 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 ; Per-user AppData, not Program Files: the server writes its own config.ini,
-; data/, logs/ and .venv/ into this same folder at run time, as the signed-in
-; user (the scheduled task register_service.ps1 sets up runs as that user,
-; not as SYSTEM) — it needs to be writable without admin rights every time
-; it starts, not just during setup.
+; data/, scans/, uploads/ and logs/ next to mfp-server.exe at run time, as
+; the signed-in user (the scheduled task register_service.ps1 sets up runs as
+; that user, not as SYSTEM) — it needs to be writable without admin rights
+; every time it starts, not just during setup.
 ; Caveat: combined with PrivilegesRequired=admin below, {localappdata} is the
 ; profile of whoever approves the UAC prompt. On the common single-admin-user
 ; PC that's the same person installing it, so this is fine; on a shared
 ; machine where a *different* account approves elevation, files would land
-; in that account's profile instead — unverified on real Windows either way.
+; in that account's profile instead.
 DefaultDirName={localappdata}\MFP Print & Scan Server
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 ; register_service.ps1 (Scheduled Task + firewall rules) needs admin; ask
 ; for it once, up front, rather than mid-install.
 PrivilegesRequired=admin
+ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\..\dist
 OutputBaseFilename=mfp-print-scan-server-setup-{#MyAppVersion}
-Compression=lzma2
+Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName={#MyAppName}
+UninstallDisplayIcon={app}\mfp-server.exe
 DisableWelcomePage=no
 
 [Languages]
@@ -66,18 +69,21 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Files]
-Source: "..\..\app\*"; DestDir: "{app}\app"; Excludes: "__pycache__,*.pyc"; Flags: recursesubdirs ignoreversion
-Source: "..\..\scripts\*"; DestDir: "{app}\scripts"; Flags: ignoreversion
-Source: "..\..\run.py"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\config.example.ini"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\start.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\start.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\register_service.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\unregister_service.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\README.ru.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+; Everything build-exe.ps1 put together: mfp-server.exe, _internal\, the
+; scripts, config.example.ini and docs. config.ini itself isn't shipped — the
+; server creates it from config.example.ini on first start and an upgrade
+; must never overwrite the user's copy.
+Source: "{#BuildDir}\*"; DestDir: "{app}"; Excludes: "config.ini"; Flags: recursesubdirs ignoreversion
+
+[InstallDelete]
+; Upgrading over the older Python-based install: its code and venv aren't
+; used any more (the scripts prefer mfp-server.exe). Data stays.
+Type: filesandordirs; Name: "{app}\.venv"
+Type: filesandordirs; Name: "{app}\app"
+Type: files; Name: "{app}\run.py"
+Type: files; Name: "{app}\requirements.txt"
+; _internal\ of a previous version: replaced wholesale, no stale modules.
+Type: filesandordirs; Name: "{app}\_internal"
 
 [Icons]
 Name: "{group}\Open web UI"; Filename: "{app}\open-web-ui.url"
@@ -87,8 +93,8 @@ Name: "{group}\Stop starting automatically"; Filename: "{app}\unregister_service
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 
 [Run]
-; First-time setup (venv, dependencies, scheduled task, firewall, start) runs
-; from CurStepChanged below rather than here, so its exit code can be checked.
+; The background task (scheduled task, firewall, start) is set up from
+; CurStepChanged below rather than here, so its exit code can be checked.
 Filename: "{app}\open-web-ui.url"; Description: "Open the web UI"; Flags: postinstall shellexec skipifsilent
 
 [UninstallRun]
@@ -98,43 +104,30 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
     WorkingDir: "{app}"; RunOnceId: "UnregisterMfpService"; Flags: runhidden waituntilterminated
 
 [UninstallDelete]
-; .venv (installed dependencies) is safe to remove; config.ini, data/, scans/
-; and uploads/ are the user's own settings and print/scan history and are
-; deliberately NOT listed here, so uninstalling never deletes them silently
-; (matching the .deb/.rpm postrm/postun — see packaging docs).
-Type: filesandordirs; Name: "{app}\.venv"
-; Only the program's own code, but Python leaves __pycache__ folders in it at
-; run time that the uninstaller didn't install and so wouldn't remove.
-Type: filesandordirs; Name: "{app}\app"
+; config.ini, data/, scans/ and uploads/ are the user's own settings and
+; print/scan history and are deliberately NOT listed here, so uninstalling
+; never deletes them silently (matching the .deb/.rpm postrm/postun).
 Type: filesandordirs; Name: "{app}\logs"
 Type: files; Name: "{app}\open-web-ui.url"
 
 [Code]
-function PythonFound(): Boolean;
+function RunScript(const Script: String; var ResultCode: Integer): Boolean;
+begin
+  // -NoPause: the scripts would otherwise wait for Enter in a hidden window.
+  Result := Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+                 '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\scripts\') + Script + '" -NoPause',
+                 ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
 begin
-  // The same interpreters start.ps1 tries (the python.org launcher py, then
-  // "python"), actually run: "where python.exe" would also find the
-  // Microsoft Store stub, which isn't Python and exits 9009 when run.
-  // Exits 0 only for a real Python 3.11+.
-  Result := Exec('py.exe', '-3 -c "import sys; sys.exit(sys.version_info < (3, 11))"', '',
-                 SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
-  if not Result then
-    Result := Exec('python.exe', '-c "import sys; sys.exit(sys.version_info < (3, 11))"', '',
-                   SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
-end;
-
-function InitializeSetup(): Boolean;
-begin
-  Result := True;
-  if not PythonFound() then
-  begin
-    MsgBox('Python 3.11+ wasn''t found. Install it from https://www.python.org/downloads/windows/ ' +
-           '(tick "Add python.exe to PATH" during installation), then run this setup again.',
-           mbError, MB_OK);
-    Result := False;
-  end;
+  Result := '';
+  // Upgrade: a running server holds its files (mfp-server.exe, _internal\)
+  // open, so stop it and drop its task first; CurStepChanged sets it up again.
+  if FileExists(ExpandConstant('{app}\scripts\unregister_service.ps1')) then
+    RunScript('unregister_service.ps1', ResultCode);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -150,18 +143,13 @@ begin
   SaveStringToFile(ExpandConstant('{app}\open-web-ui.url'),
     '[InternetShortcut]' + #13#10 + 'URL=http://localhost:8000/' + #13#10, False);
 
-  // First-time setup mirrors "Steps" in README, "Windows": create the venv
-  // and install dependencies (needs internet access), then register the
-  // scheduled task, firewall rules, and start the server — exactly
-  // register_service.bat's own logic. -NoPause: it would otherwise wait for
-  // Enter in a hidden window, and setup would hang forever.
-  WizardForm.StatusLabel.Caption := 'Setting up the Python environment and the background service...';
-  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-              ExpandConstant('-NoProfile -ExecutionPolicy Bypass -File "{app}\scripts\register_service.ps1" -NoPause'),
-              ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+  // Register the scheduled task and firewall rules and start the server —
+  // exactly register_service.bat's own logic.
+  WizardForm.StatusLabel.Caption := 'Setting up the background service...';
+  if not RunScript('register_service.ps1', ResultCode) or (ResultCode <> 0) then
     MsgBox('The files are installed, but setting up the background service failed ' +
-           '(exit code ' + IntToStr(ResultCode) + '). Most often that''s no internet access for ' +
-           'installing the Python packages, or port 8000 already in use.' + #13#10#13#10 +
+           '(exit code ' + IntToStr(ResultCode) + '). Most often port 8000 is already in use, ' +
+           'e.g. by the server still running in a start.bat window.' + #13#10#13#10 +
            'Run "Start automatically with Windows" from the Start menu to retry and see the error.',
            mbError, MB_OK);
 end;

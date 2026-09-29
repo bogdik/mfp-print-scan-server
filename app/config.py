@@ -24,12 +24,16 @@ import logging
 import os
 import secrets
 import shutil
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-ROOT = Path(__file__).resolve().parent.parent
+# The folder with config.ini, data/, scans/, uploads/: the project folder, or
+# for the PyInstaller build (packaging/windows/mfp-server.spec) the folder of
+# the .exe — the code itself is then unpacked elsewhere and isn't writable.
+ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
 CONFIG_PATH = Path(os.environ.get("MFP_CONFIG") or ROOT / "config.ini")
 EXAMPLE_PATH = ROOT / "config.example.ini"
 MAIN_SECTION = "main"  # implicit section for the top-level `key = value` lines

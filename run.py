@@ -97,7 +97,15 @@ if __name__ == "__main__":
     parser.add_argument("--log-file", type=Path, help="write the log to this file instead of the console")
     parser.add_argument("--hash-password", action="store_true",
                         help="ask for a password and print its hash for the [users] section of config.ini")
+    parser.add_argument("--print-ports", action="store_true",
+                        help="print 'web-port ipp-port mdns(0/1) escl-port scheme' as this config sets them, and exit "
+                             "(used by start.ps1 and the service scripts)")
     args = parser.parse_args()
+
+    if args.print_ports:
+        scheme = "https" if WEB_SSL_KWARGS else "http"
+        print(WEB_PORT, IPP_PORT, int(settings.mdns), ESCL_PORT, scheme)
+        sys.exit(0)
 
     if args.hash_password:
         import getpass
